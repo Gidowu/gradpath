@@ -1,45 +1,71 @@
 const express = require('express');
+const crypto = require('crypto');
 const { pool } = require('../db');
 const router = express.Router();
 
-// POST /auth/login — Log in with name and email
-// If the email does not exist, create the user automatically
-router.post('/login', async (req, res) => {
-  const { name, email } = req.body;
+// Simple password hashing (good enough for class project)
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
 
-  // Validate input
-  if (!email || !name) {
-    return res.status(400).json({ error: 'Name and email are required' });
+// POST /auth/register — Create a new account
+router.post('/register', async (req, res) => {
+  const { name, email, password } = req.body;
+
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Name, email, and password are required' });
   }
-
-  // Simple email format check
   if (!email.includes('@')) {
     return res.status(400).json({ error: 'Invalid email format' });
   }
+  if (password.length < 4) {
+    return res.status(400).json({ error: 'Password must be at least 4 characters' });
+  }
 
   try {
-    // Check if user exists by email
-    const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
-
-    let user;
-
-    if (rows.length > 0) {
-      // Existing user — update name if changed
-      user = rows[0];
-      if (user.name !== name) {
-        await pool.query('UPDATE users SET name = ? WHERE id = ?', [name, user.id]);
-        user.name = name;
-      }
-    } else {
-      // New user — create automatically
-      const [result] = await pool.query(
-        'INSERT INTO users (email, name) VALUES (?, ?)',
-        [email, name]
-      );
-      user = { id: result.insertId, email, name };
+    const [existing] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+    if (existing.length > 0) {
+      return res.status(409).json({ error: 'An account with this email already exists. Please sign in.' });
     }
 
-    // Store user ID in session (server-side session)
+    const hashed = hashPassword(password);
+    const [result] = await pool.query(
+      'INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)',
+      [email, name, hashed]
+    );
+
+    const user = { id: result.insertId, email, name };
+    req.session.userId = user.id;
+
+    res.json({ message: 'Account created successfully', user });
+  } catch (err) {
+    console.error('Register error:', err.message);
+    res.status(500).json({ error: 'Server error during registration' });
+  }
+});
+
+// POST /auth/login — Sign in with email and password
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  try {
+    const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+
+    if (rows.length === 0) {
+      return res.status(401).json({ error: 'No account found with this email. Please sign up first.' });
+    }
+
+    const user = rows[0];
+    const hashed = hashPassword(password);
+
+    if (user.password_hash !== hashed) {
+      return res.status(401).json({ error: 'Incorrect password. Please try again.' });
+    }
+
     req.session.userId = user.id;
 
     res.json({
@@ -52,7 +78,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// POST /auth/logout — Destroy session and log user out
+// POST /auth/logout
 router.post('/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) {

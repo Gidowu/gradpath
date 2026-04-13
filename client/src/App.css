@@ -1,3 +1,9 @@
+:root {
+  --gp-primary: #1a3c6e;
+  --gp-accent: #2e86c1;
+  --gp-light: #e8f4fd;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -5,143 +11,202 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #f0f4f8;
-  color: #2c3e50;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: linear-gradient(135deg, #0f2439 0%, #1a3c6e 50%, #2e86c1 100%);
   min-height: 100vh;
 }
 
-.container {
-  max-width: 480px;
-  margin: 0 auto;
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ===== NAVBAR ===== */
+.gp-navbar {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gp-brand {
+  font-weight: 700;
+  font-size: 1.4rem;
+  letter-spacing: -0.5px;
+}
+
+.gp-user-badge {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 50px;
+  padding: 6px 16px;
+}
+
+/* ===== HERO / LOGIN SECTION ===== */
+.gp-hero {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 40px 20px;
 }
 
-.header {
-  text-align: center;
-  margin-bottom: 32px;
-}
-
-.header h1 {
-  font-size: 2.5rem;
-  color: #1b4f72;
-  margin-bottom: 4px;
-}
-
-.subtitle {
-  color: #7f8c8d;
-  font-size: 1.1rem;
-}
-
-.card {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 32px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  text-align: center;
-}
-
-.card h2 {
-  margin-bottom: 8px;
-  color: #1b4f72;
-}
-
-.card p {
-  margin-bottom: 8px;
-  line-height: 1.5;
-}
-
-.email {
-  color: #7f8c8d;
-  font-size: 0.95rem;
-}
-
-.session-note {
-  color: #27ae60;
-  font-size: 0.85rem;
-  font-style: italic;
-  margin: 16px 0;
-}
-
-/* ===== LOGIN FORM ===== */
-
-.login-form {
-  margin-top: 20px;
-  text-align: left;
-}
-
-.form-group {
-  margin-bottom: 16px;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: #34495e;
-}
-
-.form-group input {
-  width: 100%;
-  padding: 10px 14px;
-  border: 2px solid #dce1e6;
-  border-radius: 8px;
-  font-size: 1rem;
-  transition: border-color 0.2s;
-}
-
-.form-group input:focus {
-  outline: none;
-  border-color: #2e86c1;
-}
-
-.error {
-  color: #e74c3c;
-  font-size: 0.85rem;
-  margin-bottom: 8px;
-  text-align: center;
-}
-
-/* ===== BUTTONS ===== */
-
-.btn {
-  display: inline-block;
-  width: 100%;
-  padding: 12px 32px;
+.gp-login-card {
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 20px;
   border: none;
-  border-radius: 8px;
-  font-size: 1rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  max-width: 440px;
+  width: 100%;
+}
+
+.gp-card-accent {
+  height: 4px;
+  background: linear-gradient(90deg, #2e86c1, #48c9b0, #2e86c1);
+}
+
+.gp-icon-circle {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--gp-primary), var(--gp-accent));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  box-shadow: 0 8px 24px rgba(26, 60, 110, 0.3);
+}
+
+.gp-form-control {
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.gp-form-control:focus {
+  border-color: var(--gp-accent);
+  box-shadow: 0 0 0 3px rgba(46, 134, 193, 0.15);
+}
+
+.gp-input-icon {
+  background: transparent;
+  border: 2px solid #e2e8f0;
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+  color: #94a3b8;
+}
+
+.gp-form-control.with-icon {
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+}
+
+.gp-btn-login {
+  background: linear-gradient(135deg, var(--gp-primary), var(--gp-accent));
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
   font-weight: 600;
-  cursor: pointer;
-  margin-top: 8px;
-  transition: background 0.2s;
+  font-size: 1rem;
+  letter-spacing: 0.3px;
+  transition: all 0.3s;
+  box-shadow: 0 4px 15px rgba(26, 60, 110, 0.3);
 }
 
-.btn-login {
-  background: #2e86c1;
+.gp-btn-login:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(26, 60, 110, 0.4);
+  background: linear-gradient(135deg, #153257, #2574ab);
+}
+
+/* ===== WELCOME (LOGGED IN) ===== */
+.gp-welcome-card {
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 20px;
+  border: none;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-width: 600px;
+  width: 100%;
+}
+
+.gp-avatar-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #48c9b0, #2e86c1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  font-size: 2rem;
   color: white;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(46, 134, 193, 0.3);
 }
 
-.btn-login:hover {
-  background: #1b6ca1;
-}
-
-.btn-logout {
-  background: #e74c3c;
-  color: white;
-  width: auto;
-  padding: 10px 28px;
-}
-
-.btn-logout:hover {
-  background: #c0392b;
-}
-
-.status-bar {
-  text-align: center;
-  margin-top: 24px;
-  padding: 8px;
+.gp-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 50px;
   font-size: 0.8rem;
-  color: #95a5a6;
+  font-weight: 500;
+}
+
+.gp-stat-card {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  transition: transform 0.2s;
+}
+
+.gp-stat-card:hover {
+  transform: translateY(-2px);
+}
+
+/* ===== FEATURES ===== */
+.gp-features {
+  max-width: 440px;
+  width: 100%;
+  margin: 24px auto 0;
+}
+
+.gp-feature-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.85rem;
+}
+
+.gp-feature-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ===== FOOTER ===== */
+.gp-footer {
+  text-align: center;
+  padding: 16px;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.75rem;
+}
+
+/* ===== LOADING ===== */
+.gp-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
