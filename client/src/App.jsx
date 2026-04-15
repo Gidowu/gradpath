@@ -9,8 +9,20 @@ function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [serverStatus, setServerStatus] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Applications state
+  const [applications, setApplications] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState({
+    school_name: '',
+    program_name: '',
+    program_type: 'MS',
+    fit_level: 'Match',
+    app_deadline: '',
+    decision_date: '',
+    notes: ''
+  });
 
   useEffect(() => {
     fetch('/api/me', { credentials: 'include' })
@@ -23,19 +35,23 @@ function App() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/status')
-      .then((res) => res.json())
-      .then((data) => setServerStatus(data))
-      .catch(() => setServerStatus({ status: 'error', database: 'error' }));
-  }, []);
+    if (user) loadApplications();
+  }, [user]);
+
+  const loadApplications = async () => {
+    try {
+      const res = await fetch('/api/applications', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setApplications(data.applications);
+      }
+    } catch (err) {
+      console.error('Load failed:', err);
+    }
+  };
 
   const switchPage = (p) => {
-    setPage(p);
-    setError('');
-    setName('');
-    setEmail('');
-    setPassword('');
-    setShowPassword(false);
+    setPage(p); setError(''); setName(''); setEmail(''); setPassword(''); setShowPassword(false);
   };
 
   const handleSignUp = async (e) => {
@@ -49,14 +65,9 @@ function App() {
         body: JSON.stringify({ name, email, password })
       });
       const data = await res.json();
-      if (res.ok) {
-        setUser(data.user);
-      } else {
-        setError(data.error || 'Registration failed');
-      }
-    } catch (err) {
-      setError('Could not connect to server');
-    }
+      if (res.ok) setUser(data.user);
+      else setError(data.error || 'Registration failed');
+    } catch { setError('Could not connect to server'); }
   };
 
   const handleSignIn = async (e) => {
@@ -70,40 +81,89 @@ function App() {
         body: JSON.stringify({ email, password })
       });
       const data = await res.json();
-      if (res.ok) {
-        setUser(data.user);
-      } else {
-        setError(data.error || 'Login failed');
-      }
-    } catch (err) {
-      setError('Could not connect to server');
-    }
+      if (res.ok) setUser(data.user);
+      else setError(data.error || 'Login failed');
+    } catch { setError('Could not connect to server'); }
   };
 
   const handleLogout = async () => {
     try {
       await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
       setUser(null);
-    } catch (err) {
-      console.error('Logout failed:', err);
-    }
+      setApplications([]);
+      setEmail('');
+      setPassword('');
+      setName('');
+      setError('');
+      setPage('signin');
+    } catch (err) { console.error('Logout failed:', err); }
+  };
+
+  const handleAddApplication = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/applications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(formData)
+      });
+      if (res.ok) {
+        setShowForm(false);
+        setFormData({ school_name: '', program_name: '', program_type: 'MS', fit_level: 'Match', app_deadline: '', decision_date: '', notes: '' });
+        loadApplications();
+      }
+    } catch (err) { console.error('Add failed:', err); }
+  };
+
+  const handleStatusChange = async (id, newStatus) => {
+    try {
+      await fetch(`/api/applications/${id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status: newStatus })
+      });
+      loadApplications();
+    } catch (err) { console.error('Status change failed:', err); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this application?')) return;
+    try {
+      await fetch(`/api/applications/${id}`, { method: 'DELETE', credentials: 'include' });
+      loadApplications();
+    } catch (err) { console.error('Delete failed:', err); }
   };
 
   const getInitial = (n) => n ? n.charAt(0).toUpperCase() : '?';
 
+  const statusBadge = (status) => {
+    const colors = {
+      Researching: 'secondary',
+      Applied: 'primary',
+      Accepted: 'success',
+      Rejected: 'danger',
+      Waitlisted: 'warning'
+    };
+    return `badge bg-${colors[status] || 'secondary'}`;
+  };
+
+  const fitBadge = (fit) => {
+    const colors = { Safety: 'success', Match: 'info', Reach: 'warning' };
+    return `badge bg-${colors[fit] || 'secondary'} bg-opacity-75`;
+  };
+
   if (loading) {
     return (
       <div className="gp-loading">
-        <div className="spinner-border text-light" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
+        <div className="spinner-border text-light" role="status"></div>
       </div>
     );
   }
 
   return (
     <>
-      {/* ===== NAVBAR ===== */}
       <nav className="gp-navbar navbar navbar-dark py-3">
         <div className="container">
           <a className="navbar-brand gp-brand text-white" href="/">
@@ -112,8 +172,7 @@ function App() {
           {user && (
             <div className="d-flex align-items-center gap-3">
               <span className="text-white gp-user-badge d-none d-sm-inline-flex align-items-center gap-2">
-                <i className="bi bi-person-circle"></i>
-                {user.name}
+                <i className="bi bi-person-circle"></i>{user.name}
               </span>
               <button onClick={handleLogout} className="btn btn-outline-light btn-sm rounded-pill px-3">
                 <i className="bi bi-box-arrow-right me-1"></i>Log Out
@@ -123,47 +182,152 @@ function App() {
         </div>
       </nav>
 
-      {/* ===== MAIN ===== */}
       <div className="gp-hero">
         {user ? (
-          /* ===== LOGGED-IN ===== */
-          <div className="gp-welcome-card card p-4 p-md-5">
-            <div className="gp-card-accent"></div>
-            <div className="text-center pt-3">
-              <div className="gp-avatar-circle mb-3">
-                {getInitial(user.name)}
+          /* ===== DASHBOARD ===== */
+          <div className="container py-4" style={{ maxWidth: '1100px' }}>
+            <div className="d-flex justify-content-between align-items-center mb-4">
+              <div>
+                <h2 className="fw-bold mb-0 text-white">Your Applications</h2>
+                <p className="text-white-50 mb-0">Track and manage your graduate school journey</p>
               </div>
-              <h2 className="fw-bold mb-1" style={{ color: '#1a3c6e' }}>
-                Welcome back, {user.name}!
-              </h2>
-              <p className="text-muted mb-4">{user.email}</p>
-
-              <div className="gp-status-pill bg-success bg-opacity-10 text-success mx-auto mb-4">
-                <i className="bi bi-shield-fill-check"></i>
-                Session active — refresh to verify persistence
-              </div>
-
-              <div className="row g-3 mt-2">
-                <div className="col-6">
-                  <div className="gp-stat-card">
-                    <i className="bi bi-server text-primary d-block mb-1" style={{ fontSize: '1.3rem' }}></i>
-                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>Server</div>
-                    <span className={`badge mt-1 ${serverStatus?.status === 'running' ? 'bg-success' : 'bg-danger'}`}>
-                      {serverStatus?.status || 'unknown'}
-                    </span>
-                  </div>
-                </div>
-                <div className="col-6">
-                  <div className="gp-stat-card">
-                    <i className="bi bi-database text-primary d-block mb-1" style={{ fontSize: '1.3rem' }}></i>
-                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>Database</div>
-                    <span className={`badge mt-1 ${serverStatus?.database === 'connected' ? 'bg-success' : 'bg-danger'}`}>
-                      {serverStatus?.database || 'unknown'}
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <button className="btn btn-light rounded-pill px-4 shadow-sm" onClick={() => setShowForm(!showForm)}>
+                <i className="bi bi-plus-circle me-2"></i>
+                {showForm ? 'Cancel' : 'Add Application'}
+              </button>
             </div>
+
+            {/* ===== ADD FORM ===== */}
+            {showForm && (
+              <div className="card gp-welcome-card mb-4">
+                <div className="gp-card-accent"></div>
+                <div className="card-body p-4">
+                  <h5 className="fw-bold mb-3" style={{ color: '#1a3c6e' }}>
+                    <i className="bi bi-plus-square me-2"></i>New Application
+                  </h5>
+                  <form onSubmit={handleAddApplication}>
+                    <div className="row g-3">
+                      <div className="col-md-6">
+                        <label className="form-label fw-semibold">School Name *</label>
+                        <input type="text" className="form-control gp-form-control"
+                          value={formData.school_name}
+                          onChange={(e) => setFormData({ ...formData, school_name: e.target.value })}
+                          placeholder="Harvard University" required />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label fw-semibold">Program Name *</label>
+                        <input type="text" className="form-control gp-form-control"
+                          value={formData.program_name}
+                          onChange={(e) => setFormData({ ...formData, program_name: e.target.value })}
+                          placeholder="Computer Science" required />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label fw-semibold">Degree Type</label>
+                        <select className="form-select gp-form-control"
+                          value={formData.program_type}
+                          onChange={(e) => setFormData({ ...formData, program_type: e.target.value })}>
+                          <option value="MS">MS</option>
+                          <option value="PhD">PhD</option>
+                          <option value="MBA">MBA</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label fw-semibold">Fit Level</label>
+                        <select className="form-select gp-form-control"
+                          value={formData.fit_level}
+                          onChange={(e) => setFormData({ ...formData, fit_level: e.target.value })}>
+                          <option value="Safety">Safety</option>
+                          <option value="Match">Match</option>
+                          <option value="Reach">Reach</option>
+                        </select>
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label fw-semibold">Application Deadline</label>
+                        <input type="date" className="form-control gp-form-control"
+                          value={formData.app_deadline}
+                          onChange={(e) => setFormData({ ...formData, app_deadline: e.target.value })} />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label fw-semibold">Decision Date</label>
+                        <input type="date" className="form-control gp-form-control"
+                          value={formData.decision_date}
+                          onChange={(e) => setFormData({ ...formData, decision_date: e.target.value })} />
+                      </div>
+                      <div className="col-12">
+                        <label className="form-label fw-semibold">Notes</label>
+                        <textarea className="form-control gp-form-control" rows="2"
+                          value={formData.notes}
+                          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                          placeholder="GRE required, letters of rec due by..."></textarea>
+                      </div>
+                      <div className="col-12">
+                        <button type="submit" className="btn btn-primary gp-btn-login text-white">
+                          <i className="bi bi-check-circle me-2"></i>Save Application
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* ===== APPLICATION LIST ===== */}
+            {applications.length === 0 ? (
+              <div className="card gp-welcome-card text-center p-5">
+                <div className="py-4">
+                  <i className="bi bi-inbox text-muted" style={{ fontSize: '3rem' }}></i>
+                  <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No applications yet</h4>
+                  <p className="text-muted">Click "Add Application" to get started</p>
+                </div>
+              </div>
+            ) : (
+              <div className="row g-3">
+                {applications.map(app => (
+                  <div key={app.id} className="col-md-6 col-lg-4">
+                    <div className="card gp-welcome-card h-100">
+                      <div className="gp-card-accent"></div>
+                      <div className="card-body p-3">
+                        <div className="d-flex justify-content-between align-items-start mb-2">
+                          <div>
+                            <h6 className="fw-bold mb-1" style={{ color: '#1a3c6e' }}>{app.school_name}</h6>
+                            <p className="text-muted small mb-1">{app.program_name} ({app.program_type})</p>
+                          </div>
+                          <button className="btn btn-sm btn-link text-danger p-0" onClick={() => handleDelete(app.id)}>
+                            <i className="bi bi-trash"></i>
+                          </button>
+                        </div>
+
+                        <div className="d-flex gap-2 mb-2">
+                          <span className={statusBadge(app.status)}>{app.status}</span>
+                          <span className={fitBadge(app.fit_level)}>{app.fit_level}</span>
+                        </div>
+
+                        {app.app_deadline && (
+                          <p className="small text-muted mb-1">
+                            <i className="bi bi-calendar-event me-1"></i>
+                            Deadline: {new Date(app.app_deadline).toLocaleDateString()}
+                          </p>
+                        )}
+                        {app.notes && (
+                          <p className="small text-muted mb-2 fst-italic">"{app.notes}"</p>
+                        )}
+
+                        <label className="small text-muted mb-1">Update Status:</label>
+                        <select className="form-select form-select-sm" value={app.status}
+                          onChange={(e) => handleStatusChange(app.id, e.target.value)}>
+                          <option value="Researching">Researching</option>
+                          <option value="Applied">Applied</option>
+                          <option value="Accepted">Accepted</option>
+                          <option value="Rejected">Rejected</option>
+                          <option value="Waitlisted">Waitlisted</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
         ) : page === 'signup' ? (
@@ -179,105 +343,47 @@ function App() {
                   <h3 className="fw-bold" style={{ color: '#1a3c6e' }}>Create Account</h3>
                   <p className="text-muted mb-0">Start tracking your grad school applications</p>
                 </div>
-
                 <form onSubmit={handleSignUp}>
                   <div className="mb-3">
-                    <label htmlFor="name" className="form-label fw-semibold text-dark">Full Name</label>
+                    <label className="form-label fw-semibold text-dark">Full Name</label>
                     <div className="input-group">
-                      <span className="gp-input-icon input-group-text">
-                        <i className="bi bi-person"></i>
-                      </span>
-                      <input
-                        id="name"
-                        type="text"
-                        className="form-control gp-form-control with-icon"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder="John Doe"
-                        required
-                      />
+                      <span className="gp-input-icon input-group-text"><i className="bi bi-person"></i></span>
+                      <input type="text" className="form-control gp-form-control with-icon"
+                        value={name} onChange={(e) => setName(e.target.value)} placeholder="John Doe" required />
                     </div>
                   </div>
-
                   <div className="mb-3">
-                    <label htmlFor="signupEmail" className="form-label fw-semibold text-dark">Email Address</label>
+                    <label className="form-label fw-semibold text-dark">Email Address</label>
                     <div className="input-group">
-                      <span className="gp-input-icon input-group-text">
-                        <i className="bi bi-envelope"></i>
-                      </span>
-                      <input
-                        id="signupEmail"
-                        type="email"
-                        className="form-control gp-form-control with-icon"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="you@kenyon.edu"
-                        required
-                      />
+                      <span className="gp-input-icon input-group-text"><i className="bi bi-envelope"></i></span>
+                      <input type="email" className="form-control gp-form-control with-icon"
+                        value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@kenyon.edu" required />
                     </div>
                   </div>
-
                   <div className="mb-4">
-                    <label htmlFor="signupPassword" className="form-label fw-semibold text-dark">Password</label>
+                    <label className="form-label fw-semibold text-dark">Password</label>
                     <div className="input-group">
-                      <span className="gp-input-icon input-group-text">
-                        <i className="bi bi-lock"></i>
-                      </span>
-                      <input
-                        id="signupPassword"
-                        type={showPassword ? 'text' : 'password'}
-                        className="form-control gp-form-control with-icon"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Create a password"
-                        required
-                        minLength={4}
-                      />
-                      <button
-                        type="button"
-                        className="input-group-text gp-input-icon"
+                      <span className="gp-input-icon input-group-text"><i className="bi bi-lock"></i></span>
+                      <input type={showPassword ? 'text' : 'password'} className="form-control gp-form-control with-icon"
+                        value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" required minLength={4} />
+                      <button type="button" className="input-group-text gp-input-icon"
                         style={{ borderLeft: 'none', borderRight: '2px solid #e2e8f0', borderRadius: '0 10px 10px 0', cursor: 'pointer' }}
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
+                        onClick={() => setShowPassword(!showPassword)}>
                         <i className={`bi ${showPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
                       </button>
                     </div>
                   </div>
-
-                  {error && (
-                    <div className="alert alert-danger py-2 rounded-3" role="alert">
-                      <i className="bi bi-exclamation-circle me-2"></i>{error}
-                    </div>
-                  )}
-
+                  {error && <div className="alert alert-danger py-2 rounded-3"><i className="bi bi-exclamation-circle me-2"></i>{error}</div>}
                   <button type="submit" className="btn btn-primary gp-btn-login w-100 text-white">
                     <i className="bi bi-person-check me-2"></i>Create Account
                   </button>
                 </form>
-
                 <div className="text-center mt-4 pt-3" style={{ borderTop: '1px solid #e2e8f0' }}>
                   <p className="text-muted mb-0" style={{ fontSize: '0.9rem' }}>
                     Already have an account?{' '}
-                    <a href="#" onClick={(e) => { e.preventDefault(); switchPage('signin'); }} className="fw-semibold text-decoration-none" style={{ color: '#2e86c1' }}>
-                      Sign In
-                    </a>
+                    <a href="#" onClick={(e) => { e.preventDefault(); switchPage('signin'); }} className="fw-semibold text-decoration-none" style={{ color: '#2e86c1' }}>Sign In</a>
                   </p>
                 </div>
-              </div>
-            </div>
-
-            <div className="gp-features">
-              <div className="gp-feature-item">
-                <div className="gp-feature-icon"><i className="bi bi-check2 text-white"></i></div>
-                Track applications to multiple schools
-              </div>
-              <div className="gp-feature-item">
-                <div className="gp-feature-icon"><i className="bi bi-check2 text-white"></i></div>
-                Manage deadlines and statuses
-              </div>
-              <div className="gp-feature-item">
-                <div className="gp-feature-icon"><i className="bi bi-check2 text-white"></i></div>
-                Get advisor feedback on your progress
               </div>
             </div>
           </div>
@@ -295,86 +401,39 @@ function App() {
                   <h3 className="fw-bold" style={{ color: '#1a3c6e' }}>Welcome Back</h3>
                   <p className="text-muted mb-0">Sign in to continue your journey</p>
                 </div>
-
                 <form onSubmit={handleSignIn}>
                   <div className="mb-3">
-                    <label htmlFor="loginEmail" className="form-label fw-semibold text-dark">Email Address</label>
+                    <label className="form-label fw-semibold text-dark">Email Address</label>
                     <div className="input-group">
-                      <span className="gp-input-icon input-group-text">
-                        <i className="bi bi-envelope"></i>
-                      </span>
-                      <input
-                        id="loginEmail"
-                        type="email"
-                        className="form-control gp-form-control with-icon"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="you@kenyon.edu"
-                        required
-                      />
+                      <span className="gp-input-icon input-group-text"><i className="bi bi-envelope"></i></span>
+                      <input type="email" className="form-control gp-form-control with-icon"
+                        value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@kenyon.edu" required />
                     </div>
                   </div>
-
                   <div className="mb-4">
-                    <label htmlFor="loginPassword" className="form-label fw-semibold text-dark">Password</label>
+                    <label className="form-label fw-semibold text-dark">Password</label>
                     <div className="input-group">
-                      <span className="gp-input-icon input-group-text">
-                        <i className="bi bi-lock"></i>
-                      </span>
-                      <input
-                        id="loginPassword"
-                        type={showPassword ? 'text' : 'password'}
-                        className="form-control gp-form-control with-icon"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Enter your password"
-                        required
-                      />
-                      <button
-                        type="button"
-                        className="input-group-text gp-input-icon"
+                      <span className="gp-input-icon input-group-text"><i className="bi bi-lock"></i></span>
+                      <input type={showPassword ? 'text' : 'password'} className="form-control gp-form-control with-icon"
+                        value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" required />
+                      <button type="button" className="input-group-text gp-input-icon"
                         style={{ borderLeft: 'none', borderRight: '2px solid #e2e8f0', borderRadius: '0 10px 10px 0', cursor: 'pointer' }}
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
+                        onClick={() => setShowPassword(!showPassword)}>
                         <i className={`bi ${showPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
                       </button>
                     </div>
                   </div>
-
-                  {error && (
-                    <div className="alert alert-danger py-2 rounded-3" role="alert">
-                      <i className="bi bi-exclamation-circle me-2"></i>{error}
-                    </div>
-                  )}
-
+                  {error && <div className="alert alert-danger py-2 rounded-3"><i className="bi bi-exclamation-circle me-2"></i>{error}</div>}
                   <button type="submit" className="btn btn-primary gp-btn-login w-100 text-white">
                     <i className="bi bi-arrow-right-circle me-2"></i>Sign In
                   </button>
                 </form>
-
                 <div className="text-center mt-4 pt-3" style={{ borderTop: '1px solid #e2e8f0' }}>
                   <p className="text-muted mb-0" style={{ fontSize: '0.9rem' }}>
                     Don't have an account?{' '}
-                    <a href="#" onClick={(e) => { e.preventDefault(); switchPage('signup'); }} className="fw-semibold text-decoration-none" style={{ color: '#2e86c1' }}>
-                      Sign Up
-                    </a>
+                    <a href="#" onClick={(e) => { e.preventDefault(); switchPage('signup'); }} className="fw-semibold text-decoration-none" style={{ color: '#2e86c1' }}>Sign Up</a>
                   </p>
                 </div>
-              </div>
-            </div>
-
-            <div className="gp-features">
-              <div className="gp-feature-item">
-                <div className="gp-feature-icon"><i className="bi bi-check2 text-white"></i></div>
-                Track applications to multiple schools
-              </div>
-              <div className="gp-feature-item">
-                <div className="gp-feature-icon"><i className="bi bi-check2 text-white"></i></div>
-                Manage deadlines and statuses
-              </div>
-              <div className="gp-feature-item">
-                <div className="gp-feature-icon"><i className="bi bi-check2 text-white"></i></div>
-                Get advisor feedback on your progress
               </div>
             </div>
           </div>
@@ -382,7 +441,7 @@ function App() {
       </div>
 
       <footer className="gp-footer">
-        GradPath &copy; 2026 Godwin &middot; Kenyon College
+        GradPath &copy; 2026 Godwin Idowu &middot; Kenyon College
       </footer>
     </>
   );

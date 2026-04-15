@@ -5,6 +5,7 @@ const session = require('express-session');
 const path = require('path');
 const { pool, initDatabase } = require('./db');
 const authRoutes = require('./routes/auth');
+const applicationsRoutes = require('./routes/applications');
 
 const app = express();
 const PORT = process.env.PORT || 4100;
@@ -32,6 +33,7 @@ app.use(
 
 // Auth routes (login, logout)
 app.use('/auth', authRoutes);
+app.use('/api/applications', applicationsRoutes);
 
 // GET /api/me — Return current logged-in user (checks session)
 app.get('/api/me', async (req, res) => {
