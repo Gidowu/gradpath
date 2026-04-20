@@ -11,11 +11,24 @@ const pool = mysql.createPool({
   connectionLimit: 10
 });
 
-// Verify database connection
+// Verify database connection and ensure role column exists
 async function initDatabase() {
   try {
     await pool.query('SELECT 1');
     console.log('Database: connected successfully');
+
+    // Ensure role column exists on users table (safe to run multiple times)
+    try {
+      await pool.query(`
+        ALTER TABLE users ADD COLUMN role ENUM('student','admin') NOT NULL DEFAULT 'student'
+      `);
+      console.log('Database: added role column to users table');
+    } catch (e) {
+      // Column already exists — that's fine
+      if (e.code !== 'ER_DUP_FIELDNAME') {
+        console.log('Database: role column check -', e.message);
+      }
+    }
   } catch (err) {
     console.error('Database init error:', err.message);
     console.error('Make sure MariaDB is running and .env is configured correctly.');

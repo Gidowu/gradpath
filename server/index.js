@@ -31,35 +31,41 @@ app.use(
 
 // ========== API ROUTES ==========
 
-// Auth routes (login, logout)
+// Auth routes (register, login, logout)
 app.use('/auth', authRoutes);
+
+// Application CRUD routes
 app.use('/api/applications', applicationsRoutes);
 
 // GET /api/me — Return current logged-in user (checks session)
 app.get('/api/me', async (req, res) => {
   if (!req.session.userId) {
-    return res.status(401).json({ user: null, message: 'Not authenticated' });
+    return res.status(401).json({ ok: false, error: 'Not authenticated' });
   }
 
   try {
-    const [rows] = await pool.query('SELECT id, name, email FROM users WHERE id = ?', [
+    const [rows] = await pool.query('SELECT id, name, email, role FROM users WHERE id = ?', [
       req.session.userId
     ]);
 
     if (rows.length === 0) {
-      return res.status(401).json({ user: null, message: 'User not found' });
+      return res.status(401).json({ ok: false, error: 'User not found' });
     }
 
-    res.json({ user: rows[0] });
+    const user = rows[0];
+    // Keep role in session for middleware checks
+    req.session.userRole = user.role || 'student';
+
+    res.json({ ok: true, data: { user } });
   } catch (err) {
     console.error('Error fetching user:', err.message);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
 
 // GET /api/hello — Basic scaffold test route
 app.get('/api/hello', (req, res) => {
-  res.json({ message: 'Hello from GradPath API!' });
+  res.json({ ok: true, data: { message: 'Hello from GradPath API!' } });
 });
 
 // GET /api/status — Server and DB status
@@ -71,7 +77,7 @@ app.get('/api/status', async (req, res) => {
   } catch (err) {
     dbStatus = 'error';
   }
-  res.json({ status: 'running', database: dbStatus });
+  res.json({ ok: true, data: { status: 'running', database: dbStatus } });
 });
 
 // ========== SERVE REACT FRONTEND ==========
@@ -90,8 +96,8 @@ app.get('*', (req, res) => {
 async function start() {
   await initDatabase();
 
-  app.listen(PORT, () => {
-    console.log(`GradPath server running on http://localhost:${PORT}`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`GradPath server running on http://10.192.145.179:${PORT}`);
     console.log(`Frontend served from ${clientDistPath}`);
   });
 }
