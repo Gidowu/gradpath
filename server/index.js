@@ -1,104 +1,13 @@
-require('dotenv').config();
+const app = require('./app');
+const { initDatabase } = require('./db');
 
-const express = require('express');
-const session = require('express-session');
-const path = require('path');
-const { pool, initDatabase } = require('./db');
-const authRoutes = require('./routes/auth');
-const applicationsRoutes = require('./routes/applications');
-
-const app = express();
 const PORT = process.env.PORT || 4100;
-
-// ========== MIDDLEWARE ==========
-
-// Parse JSON request bodies
-app.use(express.json());
-
-// Session middleware — server-side session with cookie
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || 'gradpath-dev-secret-change-me',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: false, // set true if behind HTTPS
-      httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
-  })
-);
-
-// ========== API ROUTES ==========
-
-// Auth routes (register, login, logout)
-app.use('/auth', authRoutes);
-
-// Application CRUD routes
-app.use('/api/applications', applicationsRoutes);
-
-// GET /api/me — Return current logged-in user (checks session)
-app.get('/api/me', async (req, res) => {
-  if (!req.session.userId) {
-    return res.status(401).json({ ok: false, error: 'Not authenticated' });
-  }
-
-  try {
-    const [rows] = await pool.query('SELECT id, name, email, role FROM users WHERE id = ?', [
-      req.session.userId
-    ]);
-
-    if (rows.length === 0) {
-      return res.status(401).json({ ok: false, error: 'User not found' });
-    }
-
-    const user = rows[0];
-    // Keep role in session for middleware checks
-    req.session.userRole = user.role || 'student';
-
-    res.json({ ok: true, data: { user } });
-  } catch (err) {
-    console.error('Error fetching user:', err.message);
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
-});
-
-// GET /api/hello — Basic scaffold test route
-app.get('/api/hello', (req, res) => {
-  res.json({ ok: true, data: { message: 'Hello from GradPath API!' } });
-});
-
-// GET /api/status — Server and DB status
-app.get('/api/status', async (req, res) => {
-  let dbStatus = 'disconnected';
-  try {
-    await pool.query('SELECT 1');
-    dbStatus = 'connected';
-  } catch (err) {
-    dbStatus = 'error';
-  }
-  res.json({ ok: true, data: { status: 'running', database: dbStatus } });
-});
-
-// ========== SERVE REACT FRONTEND ==========
-
-// Serve built React app from ../client/dist
-const clientDistPath = path.join(__dirname, '..', 'client', 'dist');
-app.use(express.static(clientDistPath));
-
-// SPA fallback — return index.html for all non-API routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(clientDistPath, 'index.html'));
-});
-
-// ========== START SERVER ==========
 
 async function start() {
   await initDatabase();
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`GradPath server running on http://10.192.145.179:${PORT}`);
-    console.log(`Frontend served from ${clientDistPath}`);
   });
 }
 
