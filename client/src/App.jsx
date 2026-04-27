@@ -566,7 +566,7 @@ function App() {
       </div>
 
       <footer className="gp-footer">
-        GradPath &copy; 2026 &middot; Kenyon College
+        GradPath &copy; 2026 &middot; Kenyon College &middot; CI/CD Branch Test
       </footer>
     </>
   );
