@@ -6,6 +6,7 @@ const path = require('path');
 const { pool } = require('./db');
 const authRoutes = require('./routes/auth');
 const applicationsRoutes = require('./routes/applications');
+const deadlinesRoutes = require('./routes/deadlines');
 
 const app = express();
 
@@ -36,6 +37,9 @@ app.use('/auth', authRoutes);
 // Application CRUD routes
 app.use('/api/applications', applicationsRoutes);
 
+// Deadline CRUD routes
+app.use('/api/deadlines', deadlinesRoutes);
+
 // GET /api/me — Return current logged-in user (checks session)
 app.get('/api/me', async (req, res) => {
     if (!req.session.userId) {
@@ -52,6 +56,7 @@ app.get('/api/me', async (req, res) => {
         }
 
         const user = rows[0];
+        // Keep role in session for middleware checks
         req.session.userRole = user.role || 'student';
 
         res.json({ ok: true, data: { user } });
@@ -80,9 +85,11 @@ app.get('/api/status', async (req, res) => {
 
 // ========== SERVE REACT FRONTEND ==========
 
+// Serve built React app from ../client/dist
 const clientDistPath = path.join(__dirname, '..', 'client', 'dist');
 app.use(express.static(clientDistPath));
 
+// SPA fallback — return index.html for all non-API routes
 app.get('*', (req, res) => {
     res.sendFile(path.join(clientDistPath, 'index.html'));
 });
