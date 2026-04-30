@@ -12,6 +12,9 @@ function App() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
 
+  // Tab state: 'applications' or 'deadlines'
+  const [activeTab, setActiveTab] = useState('applications');
+
   // Applications state
   const [applications, setApplications] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -27,6 +30,23 @@ function App() {
     notes: ''
   });
   const [formErrors, setFormErrors] = useState({});
+
+  // Deadlines state
+  const [deadlines, setDeadlines] = useState([]);
+  const [showDeadlineForm, setShowDeadlineForm] = useState(false);
+  const [editingDeadlineId, setEditingDeadlineId] = useState(null);
+  const [deadlineFormData, setDeadlineFormData] = useState({
+    application_id: '',
+    title: '',
+    due_date: '',
+    reminder_date: '',
+    notes: ''
+  });
+  const [deadlineFormErrors, setDeadlineFormErrors] = useState({});
+
+  const defaultDeadlineForm = {
+    application_id: '', title: '', due_date: '', reminder_date: '', notes: ''
+  };
 
   const defaultForm = {
     school_name: '', program_name: '', program_type: 'MS', fit_level: 'Match',
@@ -53,7 +73,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (user) loadApplications();
+    if (user) {
+      loadApplications();
+      loadDeadlines();
+    }
   }, [user]);
 
   const loadApplications = async () => {
@@ -66,6 +89,90 @@ function App() {
     } catch (err) {
       console.error('Load failed:', err);
     }
+  };
+
+  const loadDeadlines = async () => {
+    try {
+      const res = await fetch('/api/deadlines', { credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) {
+        setDeadlines(data.data.deadlines);
+      }
+    } catch (err) {
+      console.error('Load deadlines failed:', err);
+    }
+  };
+
+  const openAddDeadline = () => {
+    setEditingDeadlineId(null);
+    setDeadlineFormData({ ...defaultDeadlineForm, application_id: applications.length > 0 ? String(applications[0].id) : '' });
+    setDeadlineFormErrors({});
+    setShowDeadlineForm(true);
+  };
+
+  const openEditDeadline = (dl) => {
+    setEditingDeadlineId(dl.id);
+    setDeadlineFormData({
+      application_id: String(dl.application_id),
+      title: dl.title || '',
+      due_date: dl.due_date ? dl.due_date.slice(0, 10) : '',
+      reminder_date: dl.reminder_date ? dl.reminder_date.slice(0, 10) : '',
+      notes: dl.notes || ''
+    });
+    setDeadlineFormErrors({});
+    setShowDeadlineForm(true);
+  };
+
+  const handleSubmitDeadline = async (e) => {
+    e.preventDefault();
+    setDeadlineFormErrors({});
+    const url = editingDeadlineId ? `/api/deadlines/${editingDeadlineId}` : '/api/deadlines';
+    const method = editingDeadlineId ? 'PUT' : 'POST';
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(deadlineFormData)
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setShowDeadlineForm(false);
+        setEditingDeadlineId(null);
+        setDeadlineFormData(defaultDeadlineForm);
+        loadDeadlines();
+      } else {
+        if (data.details) setDeadlineFormErrors(parseFieldErrors(data.details));
+      }
+    } catch (err) { console.error('Deadline submit failed:', err); }
+  };
+
+  const handleToggleDeadline = async (id) => {
+    try {
+      const res = await fetch(`/api/deadlines/${id}/complete`, { method: 'PUT', credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) loadDeadlines();
+    } catch (err) { console.error('Toggle deadline failed:', err); }
+  };
+
+  const handleDeleteDeadline = async (id) => {
+    if (!confirm('Delete this deadline?')) return;
+    try {
+      const res = await fetch(`/api/deadlines/${id}`, { method: 'DELETE', credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) loadDeadlines();
+    } catch (err) { console.error('Delete deadline failed:', err); }
+  };
+
+  const deadlineUrgency = (dueDateStr, isCompleted) => {
+    if (isCompleted) return 'success';
+    const now = new Date();
+    const due = new Date(dueDateStr);
+    const daysLeft = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+    if (daysLeft < 0) return 'danger';
+    if (daysLeft <= 3) return 'warning';
+    if (daysLeft <= 7) return 'info';
+    return 'secondary';
   };
 
   const switchPage = (p) => {
@@ -118,8 +225,10 @@ function App() {
       await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
       setUser(null);
       setApplications([]);
+      setDeadlines([]);
       setEmail(''); setPassword(''); setName('');
       setError(''); setFieldErrors({});
+      setActiveTab('applications');
       setPage('signin');
     } catch (err) { console.error('Logout failed:', err); }
   };
@@ -250,204 +359,393 @@ function App() {
         {user ? (
           /* ===== DASHBOARD ===== */
           <div className="container py-4" style={{ maxWidth: '1100px' }}>
-            <div className="d-flex justify-content-between align-items-center mb-4">
+            <div className="d-flex justify-content-between align-items-center mb-3">
               <div>
                 <h2 className="fw-bold mb-0 text-white">
-                  {user.role === 'admin' ? 'All Applications (Admin)' : 'Your Applications'}
+                  {user.role === 'admin' ? 'Admin Dashboard' : 'Your Dashboard'}
                 </h2>
                 <p className="text-white-50 mb-0">
                   {user.role === 'admin'
-                    ? 'Viewing all users\' applications'
+                    ? 'Viewing all users\' data'
                     : 'Track and manage your graduate school journey'}
                 </p>
               </div>
-              <button className="btn btn-light rounded-pill px-4 shadow-sm" onClick={() => showForm ? setShowForm(false) : openAddForm()}>
-                <i className="bi bi-plus-circle me-2"></i>
-                {showForm ? 'Cancel' : 'Add Application'}
-              </button>
+              {activeTab === 'applications' ? (
+                <button className="btn btn-light rounded-pill px-4 shadow-sm" onClick={() => showForm ? setShowForm(false) : openAddForm()}>
+                  <i className="bi bi-plus-circle me-2"></i>
+                  {showForm ? 'Cancel' : 'Add Application'}
+                </button>
+              ) : (
+                <button className="btn btn-light rounded-pill px-4 shadow-sm" onClick={() => showDeadlineForm ? setShowDeadlineForm(false) : openAddDeadline()}>
+                  <i className="bi bi-plus-circle me-2"></i>
+                  {showDeadlineForm ? 'Cancel' : 'Add Deadline'}
+                </button>
+              )}
             </div>
 
-            {/* ===== ADD / EDIT FORM ===== */}
-            {showForm && (
-              <div className="card gp-welcome-card mb-4">
-                <div className="gp-card-accent"></div>
-                <div className="card-body p-4">
-                  <h5 className="fw-bold mb-3" style={{ color: '#1a3c6e' }}>
-                    <i className={`bi ${editingId ? 'bi-pencil-square' : 'bi-plus-square'} me-2`}></i>
-                    {editingId ? 'Edit Application' : 'New Application'}
-                  </h5>
-                  <form onSubmit={handleSubmitApplication}>
-                    <div className="row g-3">
-                      <div className="col-md-6">
-                        <label className="form-label fw-semibold">School Name *</label>
-                        <input type="text" className={`form-control gp-form-control ${formErrors.school_name ? 'is-invalid' : ''}`}
-                          value={formData.school_name}
-                          onChange={(e) => setFormData({ ...formData, school_name: e.target.value })}
-                          placeholder="Harvard University" />
-                        {fieldErr(formErrors, 'school_name')}
-                      </div>
-                      <div className="col-md-6">
-                        <label className="form-label fw-semibold">Program Name *</label>
-                        <input type="text" className={`form-control gp-form-control ${formErrors.program_name ? 'is-invalid' : ''}`}
-                          value={formData.program_name}
-                          onChange={(e) => setFormData({ ...formData, program_name: e.target.value })}
-                          placeholder="Computer Science" />
-                        {fieldErr(formErrors, 'program_name')}
-                      </div>
-                      <div className="col-md-4">
-                        <label className="form-label fw-semibold">Degree Type</label>
-                        <select className={`form-select gp-form-control ${formErrors.program_type ? 'is-invalid' : ''}`}
-                          value={formData.program_type}
-                          onChange={(e) => setFormData({ ...formData, program_type: e.target.value })}>
-                          <option value="MS">MS</option>
-                          <option value="PhD">PhD</option>
-                          <option value="MBA">MBA</option>
-                          <option value="Other">Other</option>
-                        </select>
-                        {fieldErr(formErrors, 'program_type')}
-                      </div>
-                      <div className="col-md-4">
-                        <label className="form-label fw-semibold">Fit Level</label>
-                        <select className={`form-select gp-form-control ${formErrors.fit_level ? 'is-invalid' : ''}`}
-                          value={formData.fit_level}
-                          onChange={(e) => setFormData({ ...formData, fit_level: e.target.value })}>
-                          <option value="Safety">Safety</option>
-                          <option value="Match">Match</option>
-                          <option value="Reach">Reach</option>
-                        </select>
-                        {fieldErr(formErrors, 'fit_level')}
-                      </div>
-                      {editingId && (
+            {/* ===== TAB NAVIGATION ===== */}
+            <ul className="nav nav-pills mb-4">
+              <li className="nav-item">
+                <button className={`nav-link ${activeTab === 'applications' ? 'active' : 'text-white'}`}
+                  style={activeTab === 'applications' ? { backgroundColor: '#fff', color: '#1a3c6e' } : {}}
+                  onClick={() => { setActiveTab('applications'); setShowDeadlineForm(false); }}>
+                  <i className="bi bi-mortarboard me-1"></i>Applications
+                  <span className="badge bg-secondary ms-2">{applications.length}</span>
+                </button>
+              </li>
+              <li className="nav-item ms-2">
+                <button className={`nav-link ${activeTab === 'deadlines' ? 'active' : 'text-white'}`}
+                  style={activeTab === 'deadlines' ? { backgroundColor: '#fff', color: '#1a3c6e' } : {}}
+                  onClick={() => { setActiveTab('deadlines'); setShowForm(false); }}>
+                  <i className="bi bi-alarm me-1"></i>Deadlines
+                  <span className="badge bg-secondary ms-2">{deadlines.filter(d => !d.is_completed).length}</span>
+                </button>
+              </li>
+            </ul>
+
+            {/* ===== APPLICATIONS TAB ===== */}
+            {activeTab === 'applications' && (<>
+
+              {/* ===== ADD / EDIT FORM ===== */}
+              {showForm && (
+                <div className="card gp-welcome-card mb-4">
+                  <div className="gp-card-accent"></div>
+                  <div className="card-body p-4">
+                    <h5 className="fw-bold mb-3" style={{ color: '#1a3c6e' }}>
+                      <i className={`bi ${editingId ? 'bi-pencil-square' : 'bi-plus-square'} me-2`}></i>
+                      {editingId ? 'Edit Application' : 'New Application'}
+                    </h5>
+                    <form onSubmit={handleSubmitApplication}>
+                      <div className="row g-3">
+                        <div className="col-md-6">
+                          <label className="form-label fw-semibold">School Name *</label>
+                          <input type="text" className={`form-control gp-form-control ${formErrors.school_name ? 'is-invalid' : ''}`}
+                            value={formData.school_name}
+                            onChange={(e) => setFormData({ ...formData, school_name: e.target.value })}
+                            placeholder="Harvard University" />
+                          {fieldErr(formErrors, 'school_name')}
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label fw-semibold">Program Name *</label>
+                          <input type="text" className={`form-control gp-form-control ${formErrors.program_name ? 'is-invalid' : ''}`}
+                            value={formData.program_name}
+                            onChange={(e) => setFormData({ ...formData, program_name: e.target.value })}
+                            placeholder="Computer Science" />
+                          {fieldErr(formErrors, 'program_name')}
+                        </div>
                         <div className="col-md-4">
-                          <label className="form-label fw-semibold">Status</label>
-                          <select className={`form-select gp-form-control ${formErrors.status ? 'is-invalid' : ''}`}
-                            value={formData.status}
-                            onChange={(e) => setFormData({ ...formData, status: e.target.value })}>
+                          <label className="form-label fw-semibold">Degree Type</label>
+                          <select className={`form-select gp-form-control ${formErrors.program_type ? 'is-invalid' : ''}`}
+                            value={formData.program_type}
+                            onChange={(e) => setFormData({ ...formData, program_type: e.target.value })}>
+                            <option value="MS">MS</option>
+                            <option value="PhD">PhD</option>
+                            <option value="MBA">MBA</option>
+                            <option value="Other">Other</option>
+                          </select>
+                          {fieldErr(formErrors, 'program_type')}
+                        </div>
+                        <div className="col-md-4">
+                          <label className="form-label fw-semibold">Fit Level</label>
+                          <select className={`form-select gp-form-control ${formErrors.fit_level ? 'is-invalid' : ''}`}
+                            value={formData.fit_level}
+                            onChange={(e) => setFormData({ ...formData, fit_level: e.target.value })}>
+                            <option value="Safety">Safety</option>
+                            <option value="Match">Match</option>
+                            <option value="Reach">Reach</option>
+                          </select>
+                          {fieldErr(formErrors, 'fit_level')}
+                        </div>
+                        {editingId && (
+                          <div className="col-md-4">
+                            <label className="form-label fw-semibold">Status</label>
+                            <select className={`form-select gp-form-control ${formErrors.status ? 'is-invalid' : ''}`}
+                              value={formData.status}
+                              onChange={(e) => setFormData({ ...formData, status: e.target.value })}>
+                              <option value="Researching">Researching</option>
+                              <option value="Applied">Applied</option>
+                              <option value="Accepted">Accepted</option>
+                              <option value="Rejected">Rejected</option>
+                              <option value="Waitlisted">Waitlisted</option>
+                            </select>
+                            {fieldErr(formErrors, 'status')}
+                          </div>
+                        )}
+                        <div className={editingId ? 'col-md-6' : 'col-md-4'}>
+                          <label className="form-label fw-semibold">Application Deadline</label>
+                          <input type="date" className={`form-control gp-form-control ${formErrors.app_deadline ? 'is-invalid' : ''}`}
+                            value={formData.app_deadline}
+                            onChange={(e) => setFormData({ ...formData, app_deadline: e.target.value })} />
+                          {fieldErr(formErrors, 'app_deadline')}
+                        </div>
+                        <div className={editingId ? 'col-md-6' : 'col-md-4'}>
+                          <label className="form-label fw-semibold">Decision Date</label>
+                          <input type="date" className={`form-control gp-form-control ${formErrors.decision_date ? 'is-invalid' : ''}`}
+                            value={formData.decision_date}
+                            onChange={(e) => setFormData({ ...formData, decision_date: e.target.value })} />
+                          {fieldErr(formErrors, 'decision_date')}
+                        </div>
+                        <div className="col-12">
+                          <label className="form-label fw-semibold">Notes</label>
+                          <textarea className="form-control gp-form-control" rows="2"
+                            value={formData.notes}
+                            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                            placeholder="GRE required, letters of rec due by..."></textarea>
+                        </div>
+                        <div className="col-12">
+                          <button type="submit" className="btn btn-primary gp-btn-login text-white">
+                            <i className={`bi ${editingId ? 'bi-save' : 'bi-check-circle'} me-2`}></i>
+                            {editingId ? 'Save Changes' : 'Save Application'}
+                          </button>
+                          {editingId && (
+                            <button type="button" className="btn btn-outline-secondary ms-2 rounded-pill"
+                              onClick={() => { setShowForm(false); setEditingId(null); setFormData(defaultForm); }}>
+                              Cancel Edit
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* ===== APPLICATION LIST ===== */}
+              {applications.length === 0 ? (
+                <div className="card gp-welcome-card text-center p-5">
+                  <div className="py-4">
+                    <i className="bi bi-inbox text-muted" style={{ fontSize: '3rem' }}></i>
+                    <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No applications yet</h4>
+                    <p className="text-muted">Click "Add Application" to get started</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="row g-3">
+                  {applications.map(app => (
+                    <div key={app.id} className="col-md-6 col-lg-4">
+                      <div className="card gp-welcome-card h-100">
+                        <div className="gp-card-accent"></div>
+                        <div className="card-body p-3">
+                          <div className="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                              <h6 className="fw-bold mb-1" style={{ color: '#1a3c6e' }}>{app.school_name}</h6>
+                              <p className="text-muted small mb-1">{app.program_name} ({app.program_type})</p>
+                            </div>
+                            <div className="d-flex gap-1">
+                              <button className="btn btn-sm btn-link text-primary p-0 me-2" onClick={() => openEditForm(app)}
+                                title="Edit">
+                                <i className="bi bi-pencil"></i>
+                              </button>
+                              <button className="btn btn-sm btn-link text-danger p-0" onClick={() => handleDelete(app.id)}
+                                title="Delete">
+                                <i className="bi bi-trash"></i>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="d-flex gap-2 mb-2">
+                            <span className={statusBadge(app.status)}>{app.status}</span>
+                            <span className={fitBadge(app.fit_level)}>{app.fit_level}</span>
+                          </div>
+
+                          {/* Admin: show who owns this application */}
+                          {user.role === 'admin' && app.user_name && (
+                            <p className="small mb-1">
+                              <i className="bi bi-person me-1 text-muted"></i>
+                              <span className="text-muted">{app.user_name} ({app.user_email})</span>
+                            </p>
+                          )}
+
+                          {app.app_deadline && (
+                            <p className="small text-muted mb-1">
+                              <i className="bi bi-calendar-event me-1"></i>
+                              Deadline: {new Date(app.app_deadline).toLocaleDateString()}
+                            </p>
+                          )}
+                          {app.decision_date && (
+                            <p className="small text-muted mb-1">
+                              <i className="bi bi-calendar-check me-1"></i>
+                              Decision: {new Date(app.decision_date).toLocaleDateString()}
+                            </p>
+                          )}
+                          {app.notes && (
+                            <p className="small text-muted mb-2 fst-italic">"{app.notes}"</p>
+                          )}
+
+                          <label className="small text-muted mb-1">Update Status:</label>
+                          <select className="form-select form-select-sm" value={app.status}
+                            onChange={(e) => handleStatusChange(app.id, e.target.value)}>
                             <option value="Researching">Researching</option>
                             <option value="Applied">Applied</option>
                             <option value="Accepted">Accepted</option>
                             <option value="Rejected">Rejected</option>
                             <option value="Waitlisted">Waitlisted</option>
                           </select>
-                          {fieldErr(formErrors, 'status')}
                         </div>
-                      )}
-                      <div className={editingId ? 'col-md-6' : 'col-md-4'}>
-                        <label className="form-label fw-semibold">Application Deadline</label>
-                        <input type="date" className={`form-control gp-form-control ${formErrors.app_deadline ? 'is-invalid' : ''}`}
-                          value={formData.app_deadline}
-                          onChange={(e) => setFormData({ ...formData, app_deadline: e.target.value })} />
-                        {fieldErr(formErrors, 'app_deadline')}
-                      </div>
-                      <div className={editingId ? 'col-md-6' : 'col-md-4'}>
-                        <label className="form-label fw-semibold">Decision Date</label>
-                        <input type="date" className={`form-control gp-form-control ${formErrors.decision_date ? 'is-invalid' : ''}`}
-                          value={formData.decision_date}
-                          onChange={(e) => setFormData({ ...formData, decision_date: e.target.value })} />
-                        {fieldErr(formErrors, 'decision_date')}
-                      </div>
-                      <div className="col-12">
-                        <label className="form-label fw-semibold">Notes</label>
-                        <textarea className="form-control gp-form-control" rows="2"
-                          value={formData.notes}
-                          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                          placeholder="GRE required, letters of rec due by..."></textarea>
-                      </div>
-                      <div className="col-12">
-                        <button type="submit" className="btn btn-primary gp-btn-login text-white">
-                          <i className={`bi ${editingId ? 'bi-save' : 'bi-check-circle'} me-2`}></i>
-                          {editingId ? 'Save Changes' : 'Save Application'}
-                        </button>
-                        {editingId && (
-                          <button type="button" className="btn btn-outline-secondary ms-2 rounded-pill"
-                            onClick={() => { setShowForm(false); setEditingId(null); setFormData(defaultForm); }}>
-                            Cancel Edit
-                          </button>
-                        )}
                       </div>
                     </div>
-                  </form>
+                  ))}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* ===== APPLICATION LIST ===== */}
-            {applications.length === 0 ? (
-              <div className="card gp-welcome-card text-center p-5">
-                <div className="py-4">
-                  <i className="bi bi-inbox text-muted" style={{ fontSize: '3rem' }}></i>
-                  <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No applications yet</h4>
-                  <p className="text-muted">Click "Add Application" to get started</p>
+            </>)}
+
+            {/* ===== DEADLINES TAB ===== */}
+            {activeTab === 'deadlines' && (<>
+
+              {/* Deadline Add/Edit Form */}
+              {showDeadlineForm && (
+                <div className="card gp-welcome-card mb-4">
+                  <div className="gp-card-accent"></div>
+                  <div className="card-body p-4">
+                    <h5 className="fw-bold mb-3" style={{ color: '#1a3c6e' }}>
+                      <i className={`bi ${editingDeadlineId ? 'bi-pencil-square' : 'bi-alarm'} me-2`}></i>
+                      {editingDeadlineId ? 'Edit Deadline' : 'New Deadline'}
+                    </h5>
+                    <form onSubmit={handleSubmitDeadline}>
+                      <div className="row g-3">
+                        <div className="col-md-6">
+                          <label className="form-label fw-semibold">Application *</label>
+                          <select className={`form-select gp-form-control ${deadlineFormErrors.application_id ? 'is-invalid' : ''}`}
+                            value={deadlineFormData.application_id}
+                            onChange={(e) => setDeadlineFormData({ ...deadlineFormData, application_id: e.target.value })}>
+                            <option value="">Select an application...</option>
+                            {applications.map(app => (
+                              <option key={app.id} value={app.id}>{app.school_name} — {app.program_name}</option>
+                            ))}
+                          </select>
+                          {fieldErr(deadlineFormErrors, 'application_id')}
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label fw-semibold">Title *</label>
+                          <input type="text" className={`form-control gp-form-control ${deadlineFormErrors.title ? 'is-invalid' : ''}`}
+                            value={deadlineFormData.title}
+                            onChange={(e) => setDeadlineFormData({ ...deadlineFormData, title: e.target.value })}
+                            placeholder="Submit transcript, Write SOP..." />
+                          {fieldErr(deadlineFormErrors, 'title')}
+                        </div>
+                        <div className="col-md-4">
+                          <label className="form-label fw-semibold">Due Date *</label>
+                          <input type="date" className={`form-control gp-form-control ${deadlineFormErrors.due_date ? 'is-invalid' : ''}`}
+                            value={deadlineFormData.due_date}
+                            onChange={(e) => setDeadlineFormData({ ...deadlineFormData, due_date: e.target.value })} />
+                          {fieldErr(deadlineFormErrors, 'due_date')}
+                        </div>
+                        <div className="col-md-4">
+                          <label className="form-label fw-semibold">Reminder Date</label>
+                          <input type="date" className="form-control gp-form-control"
+                            value={deadlineFormData.reminder_date}
+                            onChange={(e) => setDeadlineFormData({ ...deadlineFormData, reminder_date: e.target.value })} />
+                        </div>
+                        <div className="col-md-4">
+                          <label className="form-label fw-semibold">Notes</label>
+                          <input type="text" className="form-control gp-form-control"
+                            value={deadlineFormData.notes}
+                            onChange={(e) => setDeadlineFormData({ ...deadlineFormData, notes: e.target.value })}
+                            placeholder="Optional notes..." />
+                        </div>
+                        <div className="col-12">
+                          <button type="submit" className="btn btn-primary gp-btn-login text-white">
+                            <i className={`bi ${editingDeadlineId ? 'bi-save' : 'bi-check-circle'} me-2`}></i>
+                            {editingDeadlineId ? 'Save Changes' : 'Save Deadline'}
+                          </button>
+                          {editingDeadlineId && (
+                            <button type="button" className="btn btn-outline-secondary ms-2 rounded-pill"
+                              onClick={() => { setShowDeadlineForm(false); setEditingDeadlineId(null); setDeadlineFormData(defaultDeadlineForm); }}>
+                              Cancel Edit
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </form>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="row g-3">
-                {applications.map(app => (
-                  <div key={app.id} className="col-md-6 col-lg-4">
-                    <div className="card gp-welcome-card h-100">
-                      <div className="gp-card-accent"></div>
-                      <div className="card-body p-3">
-                        <div className="d-flex justify-content-between align-items-start mb-2">
-                          <div>
-                            <h6 className="fw-bold mb-1" style={{ color: '#1a3c6e' }}>{app.school_name}</h6>
-                            <p className="text-muted small mb-1">{app.program_name} ({app.program_type})</p>
+              )}
+
+              {/* Deadline List */}
+              {deadlines.length === 0 ? (
+                <div className="card gp-welcome-card text-center p-5">
+                  <div className="py-4">
+                    <i className="bi bi-alarm text-muted" style={{ fontSize: '3rem' }}></i>
+                    <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No deadlines yet</h4>
+                    <p className="text-muted">Add a deadline to stay on top of your applications</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="row g-3">
+                  {deadlines.map(dl => (
+                    <div key={dl.id} className="col-md-6 col-lg-4">
+                      <div className={`card gp-welcome-card h-100 ${dl.is_completed ? 'opacity-75' : ''}`}>
+                        <div className="gp-card-accent" style={
+                          dl.is_completed ? { background: '#28a745' }
+                            : deadlineUrgency(dl.due_date, dl.is_completed) === 'danger' ? { background: '#dc3545' }
+                              : deadlineUrgency(dl.due_date, dl.is_completed) === 'warning' ? { background: '#ffc107' }
+                                : {}
+                        }></div>
+                        <div className="card-body p-3">
+                          <div className="d-flex justify-content-between align-items-start mb-2">
+                            <div className="d-flex align-items-start gap-2">
+                              <input type="checkbox" className="form-check-input mt-1" style={{ cursor: 'pointer' }}
+                                checked={!!dl.is_completed}
+                                onChange={() => handleToggleDeadline(dl.id)} />
+                              <div>
+                                <h6 className={`fw-bold mb-1 ${dl.is_completed ? 'text-decoration-line-through text-muted' : ''}`} style={dl.is_completed ? {} : { color: '#1a3c6e' }}>
+                                  {dl.title}
+                                </h6>
+                                <p className="text-muted small mb-0">
+                                  <i className="bi bi-building me-1"></i>{dl.school_name} — {dl.program_name}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="d-flex gap-1">
+                              <button className="btn btn-sm btn-link text-primary p-0 me-2" onClick={() => openEditDeadline(dl)} title="Edit">
+                                <i className="bi bi-pencil"></i>
+                              </button>
+                              <button className="btn btn-sm btn-link text-danger p-0" onClick={() => handleDeleteDeadline(dl.id)} title="Delete">
+                                <i className="bi bi-trash"></i>
+                              </button>
+                            </div>
                           </div>
-                          <div className="d-flex gap-1">
-                            <button className="btn btn-sm btn-link text-primary p-0 me-2" onClick={() => openEditForm(app)}
-                              title="Edit">
-                              <i className="bi bi-pencil"></i>
-                            </button>
-                            <button className="btn btn-sm btn-link text-danger p-0" onClick={() => handleDelete(app.id)}
-                              title="Delete">
-                              <i className="bi bi-trash"></i>
-                            </button>
+
+                          <div className="d-flex gap-2 mb-2">
+                            <span className={`badge bg-${deadlineUrgency(dl.due_date, dl.is_completed)}`}>
+                              {dl.is_completed ? 'Completed' : (() => {
+                                const days = Math.ceil((new Date(dl.due_date) - new Date()) / (1000 * 60 * 60 * 24));
+                                if (days < 0) return `${Math.abs(days)}d overdue`;
+                                if (days === 0) return 'Due today';
+                                if (days === 1) return 'Due tomorrow';
+                                return `${days}d left`;
+                              })()}
+                            </span>
                           </div>
-                        </div>
 
-                        <div className="d-flex gap-2 mb-2">
-                          <span className={statusBadge(app.status)}>{app.status}</span>
-                          <span className={fitBadge(app.fit_level)}>{app.fit_level}</span>
-                        </div>
-
-                        {/* Admin: show who owns this application */}
-                        {user.role === 'admin' && app.user_name && (
-                          <p className="small mb-1">
-                            <i className="bi bi-person me-1 text-muted"></i>
-                            <span className="text-muted">{app.user_name} ({app.user_email})</span>
-                          </p>
-                        )}
-
-                        {app.app_deadline && (
                           <p className="small text-muted mb-1">
                             <i className="bi bi-calendar-event me-1"></i>
-                            Deadline: {new Date(app.app_deadline).toLocaleDateString()}
+                            Due: {new Date(dl.due_date).toLocaleDateString()}
                           </p>
-                        )}
-                        {app.decision_date && (
-                          <p className="small text-muted mb-1">
-                            <i className="bi bi-calendar-check me-1"></i>
-                            Decision: {new Date(app.decision_date).toLocaleDateString()}
-                          </p>
-                        )}
-                        {app.notes && (
-                          <p className="small text-muted mb-2 fst-italic">"{app.notes}"</p>
-                        )}
-
-                        <label className="small text-muted mb-1">Update Status:</label>
-                        <select className="form-select form-select-sm" value={app.status}
-                          onChange={(e) => handleStatusChange(app.id, e.target.value)}>
-                          <option value="Researching">Researching</option>
-                          <option value="Applied">Applied</option>
-                          <option value="Accepted">Accepted</option>
-                          <option value="Rejected">Rejected</option>
-                          <option value="Waitlisted">Waitlisted</option>
-                        </select>
+                          {dl.reminder_date && (
+                            <p className="small text-muted mb-1">
+                              <i className="bi bi-bell me-1"></i>
+                              Reminder: {new Date(dl.reminder_date).toLocaleDateString()}
+                            </p>
+                          )}
+                          {dl.notes && (
+                            <p className="small text-muted mb-0 fst-italic">"{dl.notes}"</p>
+                          )}
+                          {user.role === 'admin' && dl.user_name && (
+                            <p className="small mb-0 mt-1">
+                              <i className="bi bi-person me-1 text-muted"></i>
+                              <span className="text-muted">{dl.user_name}</span>
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+
+            </>)}
           </div>
 
         ) : page === 'signup' ? (
