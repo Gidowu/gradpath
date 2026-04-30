@@ -22,6 +22,12 @@ function mockLoggedInWithApps(applications = []) {
             });
         }
         // Default: return ok
+        if (url === '/api/deadlines' && (!opts || opts.method === undefined || opts.method === 'GET')) {
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve({ ok: true, data: { deadlines: [] } })
+            });
+        }
         return Promise.resolve({
             ok: true,
             json: () => Promise.resolve({ ok: true, data: {} })
@@ -307,7 +313,7 @@ describe('Dashboard — application list', () => {
         await waitFor(() => {
             expect(screen.getByText('Admin')).toBeInTheDocument();
         });
-        expect(screen.getByText('All Applications (Admin)')).toBeInTheDocument();
+        expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
     });
 });
 
