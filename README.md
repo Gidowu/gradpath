@@ -2,7 +2,7 @@
 
 A full-stack web application for tracking graduate school applications. Built for SCMP 118 at Kenyon College.
 
-GradPath helps students organize their grad school journey by tracking applications, deadlines, and statuses across multiple programs. It includes role-based access (student/admin), a CI/CD pipeline, and automated deployment.
+GradPath helps students organize their grad school journey by tracking applications, deadlines, and statuses across multiple programs. It includes role-based access (student/advisor/admin), an advisor comment system, a CI/CD pipeline, and automated deployment.
 
 ## Tech Stack
 
@@ -50,15 +50,16 @@ cd ..
 CREATE DATABASE gradpath;
 ```
 
-Create `server/.env`:
+Create `.env` in the project root (`~/gradpath/.env`):
 
 ```
-DB_HOST=localhost
+DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_USER=your_db_user
 DB_PASSWORD=your_db_password
 DB_NAME=gradpath
 SESSION_SECRET=your-secret-key
+PORT=4151
 ```
 
 4. The application automatically creates all required tables on first startup.
@@ -80,6 +81,8 @@ The app will be available at `http://localhost:4151`.
 3. **Manage Status** — Update application status (Researching, Applied, Accepted, Rejected, Waitlisted) directly from the dashboard.
 4. **Track Deadlines** — Switch to the Deadlines tab to add task-level deadlines linked to specific applications. Deadlines are color-coded by urgency (red = overdue, yellow = due soon, green = completed).
 5. **Admin View** — Admin users can see all applications and deadlines across all users.
+6. **Advisor View** — Advisor users see a student roster of assigned students. Click any student to view their applications and deadlines read-only, and post feedback comments.
+7. **Assign Advisors** — Admins can open the "Manage Users" tab to assign an advisor to each student via dropdown.
 
 ## Architecture
 
@@ -92,7 +95,7 @@ There is no separate frontend dev server in production. The frontend is built on
 
 ## Database Schema
 
-The application uses three tables:
+The application uses four tables:
 
 ### users
 
@@ -101,8 +104,9 @@ The application uses three tables:
 | id           | INT AUTO_INCREMENT PRIMARY KEY | Unique user ID           |
 | name         | VARCHAR(255)                   | Full name                |
 | email        | VARCHAR(255) UNIQUE            | Email address            |
-| password_hash| VARCHAR(255)                   | Bcrypt hashed password   |
-| role         | ENUM('student','admin')        | User role (default: student) |
+| password_hash| VARCHAR(255)                   | SHA-256 hashed password  |
+| role         | ENUM('student','advisor','admin') | User role (default: student) |
+| advisor_id   | INT (FK → users.id)            | Assigned advisor (students only) |
 | created_at   | TIMESTAMP                      | Account creation time    |
 | updated_at   | TIMESTAMP                      | Last update time         |
 
@@ -137,6 +141,16 @@ The application uses three tables:
 | created_at     | TIMESTAMP                      | Record creation time     |
 | updated_at     | TIMESTAMP                      | Last update time         |
 
+### gradpath_comments
+
+| Column         | Type                            | Description              |
+|----------------|--------------------------------|--------------------------|
+| id             | INT AUTO_INCREMENT PRIMARY KEY | Unique comment ID        |
+| application_id | INT (FK → gradpath_applications.id) | Linked application (CASCADE delete) |
+| user_id        | INT (FK → users.id)            | Comment author           |
+| content        | TEXT                           | Comment text             |
+| created_at     | TIMESTAMP                      | When comment was posted  |
+
 ## API Documentation
 
 All API responses follow the format: `{ ok: true/false, data: {...}, error: "...", details: [...] }`
@@ -169,6 +183,29 @@ All API responses follow the format: `{ ok: true/false, data: {...}, error: "...
 | PUT    | /api/deadlines/:id             | Update deadline          | Yes           |
 | PUT    | /api/deadlines/:id/complete    | Toggle completion        | Yes           |
 | DELETE | /api/deadlines/:id             | Delete deadline          | Yes           |
+
+### Comments (Advisor Feedback)
+
+| Method | Endpoint                   | Description                             | Auth Required | Role           |
+|--------|---------------------------|-----------------------------------------|---------------|----------------|
+| GET    | /api/comments/:applicationId | Get comments for an application      | Yes           | Any            |
+| POST   | /api/comments             | Post a comment on an application        | Yes           | advisor, admin |
+| DELETE | /api/comments/:id         | Delete a comment                        | Yes           | author, admin  |
+
+### Advisor
+
+| Method | Endpoint                                    | Description                          | Auth Required | Role           |
+|--------|---------------------------------------------|--------------------------------------|---------------|----------------|
+| GET    | /api/advisor/students                       | List assigned students with app stats| Yes           | advisor, admin |
+| GET    | /api/advisor/students/:studentId/applications | View a student's applications (read-only) | Yes    | advisor, admin |
+| GET    | /api/advisor/students/:studentId/deadlines  | View a student's deadlines (read-only) | Yes         | advisor, admin |
+
+### Admin
+
+| Method | Endpoint                           | Description                    | Auth Required | Role  |
+|--------|------------------------------------|--------------------------------|---------------|-------|
+| GET    | /api/admin/users                   | List all users with advisor info | Yes         | admin |
+| PUT    | /api/admin/users/:userId/advisor   | Assign or remove advisor       | Yes           | admin |
 
 ### Utility
 
@@ -240,11 +277,16 @@ gradpath/
 │   ├── routes/
 │   │   ├── auth.js          # Authentication routes
 │   │   ├── applications.js  # Application CRUD routes
-│   │   └── deadlines.js     # Deadline CRUD routes
+│   │   ├── deadlines.js     # Deadline CRUD routes
+│   │   ├── comments.js      # Advisor feedback comments
+│   │   ├── advisor.js       # Advisor dashboard routes
+│   │   └── admin.js         # Admin user management routes
+│   ├── tests/
+│   │   ├── applicationRoutes.test.js  # API route tests
+│   │   └── applicationValidation.test.js  # Validation unit tests
 │   ├── utils/
 │   │   └── applicationValidation.js
 │   ├── app.js               # Express app setup
-│   ├── app.test.js          # Backend tests (20 tests)
 │   ├── db.js                # Database connection and init
 │   └── index.js             # Server entry point
 ├── tests/                   # Playwright E2E tests

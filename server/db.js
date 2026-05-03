@@ -2,7 +2,7 @@ const mysql = require('mysql2/promise');
 
 // Create a connection pool to MariaDB
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
+  host: process.env.DB_HOST || '127.0.0.1',
   port: process.env.DB_PORT || 3306,
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
@@ -17,19 +17,41 @@ async function initDatabase() {
     await pool.query('SELECT 1');
     console.log('Database: connected successfully');
 
-    // Ensure role column exists on users table (safe to run multiple times)
+    // Ensure role column exists with advisor support
     try {
       await pool.query(`
-        ALTER TABLE users ADD COLUMN role ENUM('student','admin') NOT NULL DEFAULT 'student'
+        ALTER TABLE users ADD COLUMN role ENUM('student','advisor','admin') NOT NULL DEFAULT 'student'
       `);
       console.log('Database: added role column to users table');
     } catch (e) {
-      // Column already exists — that's fine
-      if (e.code !== 'ER_DUP_FIELDNAME') {
+      if (e.code === 'ER_DUP_FIELDNAME') {
+        // Column exists — upgrade ENUM to include advisor
+        try {
+          await pool.query(`
+            ALTER TABLE users MODIFY COLUMN role ENUM('student','advisor','admin') NOT NULL DEFAULT 'student'
+          `);
+          console.log('Database: updated role enum to include advisor');
+        } catch (e2) {
+          // Already up to date
+        }
+      } else {
         console.log('Database: role column check -', e.message);
       }
     }
-    // Ensure deadlines table exists (3rd table for final project)
+
+    // Ensure advisor_id column exists on users
+    try {
+      await pool.query(`
+        ALTER TABLE users ADD COLUMN advisor_id INT DEFAULT NULL
+      `);
+      console.log('Database: added advisor_id column to users table');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') {
+        console.log('Database: advisor_id column check -', e.message);
+      }
+    }
+
+    // Ensure deadlines table exists
     try {
       await pool.query(`
         CREATE TABLE IF NOT EXISTS gradpath_deadlines (
@@ -48,6 +70,24 @@ async function initDatabase() {
       console.log('Database: gradpath_deadlines table ready');
     } catch (e) {
       console.error('Database: deadlines table error -', e.message);
+    }
+
+    // Ensure comments table exists
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS gradpath_comments (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          application_id INT NOT NULL,
+          user_id INT NOT NULL,
+          content TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (application_id) REFERENCES gradpath_applications(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+      console.log('Database: gradpath_comments table ready');
+    } catch (e) {
+      console.error('Database: comments table error -', e.message);
     }
 
   } catch (err) {
