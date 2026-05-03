@@ -7,6 +7,9 @@ const { pool } = require('./db');
 const authRoutes = require('./routes/auth');
 const applicationsRoutes = require('./routes/applications');
 const deadlinesRoutes = require('./routes/deadlines');
+const commentsRoutes = require('./routes/comments');
+const advisorRoutes = require('./routes/advisor');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 
@@ -39,6 +42,15 @@ app.use('/api/applications', applicationsRoutes);
 
 // Deadline CRUD routes
 app.use('/api/deadlines', deadlinesRoutes);
+
+// Comments routes
+app.use('/api/comments', commentsRoutes);
+
+// Advisor routes
+app.use('/api/advisor', advisorRoutes);
+
+// Admin routes
+app.use('/api/admin', adminRoutes);
 
 // GET /api/me — Return current logged-in user (checks session)
 app.get('/api/me', async (req, res) => {
