@@ -63,6 +63,12 @@ function App() {
   const [addUserData, setAddUserData] = useState({ name: '', email: '', password: '', role: 'student' });
   const [addUserError, setAddUserError] = useState('');
 
+  // Matching state
+  const [advisorList, setAdvisorList] = useState([]);
+  const [matchRequests, setMatchRequests] = useState([]);
+  const [advisorSearch, setAdvisorSearch] = useState('');
+  const [advisorTab, setAdvisorTab] = useState('students');
+
   const defaultDeadlineForm = {
     application_id: '', title: '', due_date: '', reminder_date: '', notes: ''
   };
@@ -95,10 +101,15 @@ function App() {
     if (user) {
       if (user.role === 'advisor') {
         loadAdvisorStudents();
+        loadMatchRequests();
       } else {
         loadApplications();
         loadDeadlines();
         if (user.role === 'admin') loadAllUsers();
+        if (user.role === 'student') {
+          loadAdvisorList();
+          loadMatchRequests();
+        }
       }
     }
   }, [user]);
@@ -266,6 +277,62 @@ function App() {
     } catch (err) { setAddUserError('Could not connect to server'); }
   };
 
+  // ===== MATCHING =====
+
+  const loadAdvisorList = async () => {
+    try {
+      const res = await fetch('/api/match/advisors', { credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) setAdvisorList(data.data.advisors);
+    } catch (err) { console.error('Load advisors failed:', err); }
+  };
+
+  const loadMatchRequests = async () => {
+    try {
+      const res = await fetch('/api/match/requests', { credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) setMatchRequests(data.data.requests);
+    } catch (err) { console.error('Load match requests failed:', err); }
+  };
+
+  const handleSendMatchRequest = async (advisorId) => {
+    try {
+      const res = await fetch('/api/match/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ advisorId })
+      });
+      const data = await res.json();
+      if (data.ok) loadMatchRequests();
+      else alert(data.error || 'Failed to send request');
+    } catch (err) { console.error('Send match request failed:', err); }
+  };
+
+  const handleAcceptRequest = async (requestId) => {
+    try {
+      const res = await fetch(`/api/match/requests/${requestId}/accept`, { method: 'PUT', credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) { loadMatchRequests(); loadAdvisorStudents(); }
+    } catch (err) { console.error('Accept request failed:', err); }
+  };
+
+  const handleRejectRequest = async (requestId) => {
+    try {
+      const res = await fetch(`/api/match/requests/${requestId}/reject`, { method: 'PUT', credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) loadMatchRequests();
+    } catch (err) { console.error('Reject request failed:', err); }
+  };
+
+  const handleWithdrawRequest = async (requestId) => {
+    try {
+      const res = await fetch(`/api/match/requests/${requestId}`, { method: 'DELETE', credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) loadMatchRequests();
+    } catch (err) { console.error('Withdraw request failed:', err); }
+  };
+
   // ===== DEADLINES =====
 
   const openAddDeadline = () => {
@@ -400,6 +467,10 @@ function App() {
       setStudentDeadlines([]);
       setCommentsMap({});
       setAllUsers([]);
+      setAdvisorList([]);
+      setMatchRequests([]);
+      setAdvisorSearch('');
+      setAdvisorTab('students');
       setEmail(''); setPassword(''); setName('');
       setError(''); setFieldErrors({});
       setActiveTab('applications');
@@ -522,7 +593,9 @@ function App() {
         <div>
           <h2 className="fw-bold mb-0 text-white">Advisor Dashboard</h2>
           <p className="text-white-50 mb-0">
-            {selectedStudentId ? `Viewing ${selectedStudent?.name}'s applications` : 'Manage your student roster'}
+            {selectedStudentId
+              ? `Viewing ${selectedStudent?.name}'s applications`
+              : advisorTab === 'requests' ? 'Student match requests' : 'Manage your student roster'}
           </p>
         </div>
         {selectedStudentId && (
@@ -533,6 +606,29 @@ function App() {
           </button>
         )}
       </div>
+
+      {!selectedStudentId && (
+        <ul className="nav nav-pills mb-4">
+          <li className="nav-item">
+            <button className={`nav-link ${advisorTab === 'students' ? 'active' : 'text-white'}`}
+              style={advisorTab === 'students' ? { backgroundColor: '#fff', color: '#1a3c6e' } : {}}
+              onClick={() => setAdvisorTab('students')}>
+              <i className="bi bi-people me-1"></i>My Students
+              <span className="badge bg-secondary ms-2">{advisorStudents.length}</span>
+            </button>
+          </li>
+          <li className="nav-item ms-2">
+            <button className={`nav-link ${advisorTab === 'requests' ? 'active' : 'text-white'}`}
+              style={advisorTab === 'requests' ? { backgroundColor: '#fff', color: '#1a3c6e' } : {}}
+              onClick={() => setAdvisorTab('requests')}>
+              <i className="bi bi-person-check me-1"></i>Match Requests
+              {matchRequests.length > 0 && (
+                <span className="badge bg-warning ms-2">{matchRequests.length}</span>
+              )}
+            </button>
+          </li>
+        </ul>
+      )}
 
       {selectedStudentId ? (
         <>
@@ -639,13 +735,13 @@ function App() {
             </div>
           )}
         </>
-      ) : (
+      ) : advisorTab === 'students' ? (
         advisorStudents.length === 0 ? (
           <div className="card gp-welcome-card text-center p-5">
             <div className="py-4">
               <i className="bi bi-people text-muted" style={{ fontSize: '3rem' }}></i>
-              <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No students assigned</h4>
-              <p className="text-muted">Ask an admin to assign students to your account</p>
+              <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No students yet</h4>
+              <p className="text-muted">Accept match requests from students to build your roster</p>
             </div>
           </div>
         ) : (
@@ -672,6 +768,41 @@ function App() {
                     </div>
                     <div className="mt-2 text-muted small">
                       <i className="bi bi-arrow-right me-1"></i>Click to view applications
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        /* ===== MATCH REQUESTS TAB ===== */
+        matchRequests.length === 0 ? (
+          <div className="card gp-welcome-card text-center p-5">
+            <div className="py-4">
+              <i className="bi bi-inbox text-muted" style={{ fontSize: '3rem' }}></i>
+              <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No pending requests</h4>
+              <p className="text-muted">Students will appear here when they request to match with you</p>
+            </div>
+          </div>
+        ) : (
+          <div className="row g-3">
+            {matchRequests.map(req => (
+              <div key={req.id} className="col-md-6 col-lg-4">
+                <div className="card gp-welcome-card h-100">
+                  <div className="gp-card-accent"></div>
+                  <div className="card-body p-3">
+                    <h6 className="fw-bold mb-1" style={{ color: '#1a3c6e' }}>
+                      <i className="bi bi-person-circle me-2"></i>{req.student_name}
+                    </h6>
+                    <p className="text-muted small mb-3">{req.student_email}</p>
+                    <div className="d-flex gap-2">
+                      <button className="btn btn-success btn-sm" onClick={() => handleAcceptRequest(req.id)}>
+                        <i className="bi bi-check-lg me-1"></i>Accept
+                      </button>
+                      <button className="btn btn-outline-danger btn-sm" onClick={() => handleRejectRequest(req.id)}>
+                        <i className="bi bi-x-lg me-1"></i>Decline
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -751,6 +882,15 @@ function App() {
                     <span className="badge bg-secondary ms-2">{deadlines.filter(d => !d.is_completed).length}</span>
                   </button>
                 </li>
+                {user.role === 'student' && (
+                  <li className="nav-item ms-2">
+                    <button className={`nav-link ${activeTab === 'advisor' ? 'active' : 'text-white'}`}
+                      style={activeTab === 'advisor' ? { backgroundColor: '#fff', color: '#1a3c6e' } : {}}
+                      onClick={() => { setActiveTab('advisor'); setShowForm(false); setShowDeadlineForm(false); }}>
+                      <i className="bi bi-person-check me-1"></i>Find Advisor
+                    </button>
+                  </li>
+                )}
                 {user.role === 'admin' && (
                   <li className="nav-item ms-2">
                     <button className={`nav-link ${activeTab === 'users' ? 'active' : 'text-white'}`}
@@ -1150,6 +1290,103 @@ function App() {
                 )}
 
               </>)}
+
+              {/* ===== FIND ADVISOR TAB (students only) ===== */}
+              {activeTab === 'advisor' && user.role === 'student' && (() => {
+                const currentMatch = matchRequests.find(r => r.status === 'accepted');
+                const isMatched = !!currentMatch;
+                const filtered = advisorList.filter(a =>
+                  a.name.toLowerCase().includes(advisorSearch.toLowerCase()) ||
+                  a.email.toLowerCase().includes(advisorSearch.toLowerCase())
+                );
+                return (
+                  <div>
+                    {currentMatch && (
+                      <div className="card gp-welcome-card mb-4">
+                        <div className="card-body p-3 d-flex align-items-center gap-3">
+                          <i className="bi bi-check-circle-fill text-success" style={{ fontSize: '1.5rem' }}></i>
+                          <div>
+                            <p className="mb-0 fw-semibold" style={{ color: '#1a3c6e' }}>
+                              Matched with <strong>{currentMatch.advisor_name}</strong>
+                            </p>
+                            <p className="mb-0 text-muted small">{currentMatch.advisor_email}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mb-3">
+                      <div className="input-group">
+                        <span className="input-group-text gp-input-icon"><i className="bi bi-search"></i></span>
+                        <input type="text" className="form-control gp-form-control"
+                          placeholder="Search advisors by name or email..."
+                          value={advisorSearch}
+                          onChange={e => setAdvisorSearch(e.target.value)} />
+                      </div>
+                    </div>
+
+                    {advisorList.length === 0 ? (
+                      <div className="card gp-welcome-card text-center p-5">
+                        <div className="py-4">
+                          <i className="bi bi-person-x text-muted" style={{ fontSize: '3rem' }}></i>
+                          <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No advisors available</h4>
+                          <p className="text-muted">No advisors have signed up yet</p>
+                        </div>
+                      </div>
+                    ) : filtered.length === 0 ? (
+                      <p className="text-white-50">No advisors match your search.</p>
+                    ) : (
+                      <div className="row g-3">
+                        {filtered.map(advisor => {
+                          const myRequest = matchRequests.find(r => r.advisor_id === advisor.id);
+                          return (
+                            <div key={advisor.id} className="col-md-6 col-lg-4">
+                              <div className="card gp-welcome-card h-100">
+                                <div className="gp-card-accent"></div>
+                                <div className="card-body p-3">
+                                  <h6 className="fw-bold mb-1" style={{ color: '#1a3c6e' }}>
+                                    <i className="bi bi-person-circle me-2"></i>{advisor.name}
+                                  </h6>
+                                  <p className="text-muted small mb-3">{advisor.email}</p>
+                                  {!myRequest && !isMatched && (
+                                    <button className="btn btn-primary btn-sm" onClick={() => handleSendMatchRequest(advisor.id)}>
+                                      <i className="bi bi-person-plus me-1"></i>Request Match
+                                    </button>
+                                  )}
+                                  {!myRequest && isMatched && (
+                                    <span className="text-muted small">Already matched with another advisor</span>
+                                  )}
+                                  {myRequest?.status === 'pending' && (
+                                    <div className="d-flex gap-2 align-items-center flex-wrap">
+                                      <span className="badge bg-warning">Request Sent</span>
+                                      <button className="btn btn-outline-secondary btn-sm" onClick={() => handleWithdrawRequest(myRequest.id)}>
+                                        Withdraw
+                                      </button>
+                                    </div>
+                                  )}
+                                  {myRequest?.status === 'accepted' && (
+                                    <span className="badge bg-success"><i className="bi bi-check-lg me-1"></i>Matched</span>
+                                  )}
+                                  {myRequest?.status === 'rejected' && (
+                                    <div className="d-flex gap-2 align-items-center flex-wrap">
+                                      <span className="badge bg-danger">Not Available</span>
+                                      {!isMatched && (
+                                        <button className="btn btn-outline-primary btn-sm" onClick={() => handleSendMatchRequest(advisor.id)}>
+                                          Try Again
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* ===== MANAGE USERS TAB (admin only) ===== */}
               {activeTab === 'users' && user.role === 'admin' && (
