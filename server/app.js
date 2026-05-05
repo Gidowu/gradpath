@@ -10,6 +10,7 @@ const deadlinesRoutes = require('./routes/deadlines');
 const commentsRoutes = require('./routes/comments');
 const advisorRoutes = require('./routes/advisor');
 const adminRoutes = require('./routes/admin');
+const matchingRoutes = require('./routes/matching');
 
 const app = express();
 
@@ -51,6 +52,9 @@ app.use('/api/advisor', advisorRoutes);
 
 // Admin routes
 app.use('/api/admin', adminRoutes);
+
+// Matching routes
+app.use('/api/match', matchingRoutes);
 
 // GET /api/me — Return current logged-in user (checks session)
 app.get('/api/me', async (req, res) => {

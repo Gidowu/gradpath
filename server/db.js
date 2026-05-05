@@ -90,6 +90,26 @@ async function initDatabase() {
       console.error('Database: comments table error -', e.message);
     }
 
+    // Ensure advisor_match_requests table exists
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS advisor_match_requests (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          student_id INT NOT NULL,
+          advisor_id INT NOT NULL,
+          status ENUM('pending','accepted','rejected') DEFAULT 'pending',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (advisor_id) REFERENCES users(id) ON DELETE CASCADE,
+          UNIQUE KEY unique_match (student_id, advisor_id)
+        )
+      `);
+      console.log('Database: advisor_match_requests table ready');
+    } catch (e) {
+      console.error('Database: match requests table error -', e.message);
+    }
+
   } catch (err) {
     console.error('Database init error:', err.message);
     console.error('Make sure MariaDB is running and .env is configured correctly.');
