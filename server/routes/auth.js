@@ -10,9 +10,7 @@ function hashPassword(password) {
 
 // POST /auth/register — Create a new account
 router.post('/register', async (req, res) => {
-  const { name, email, password, role } = req.body;
-  const validRoles = ['student', 'advisor', 'admin'];
-  const validatedRole = validRoles.includes(role) ? role : 'student';
+  const { name, email, password } = req.body;
 
   // Field-level validation
   const details = [];
@@ -47,14 +45,18 @@ router.post('/register', async (req, res) => {
     }
 
     const hashed = hashPassword(password);
+    // Allow role selection on signup (default to student)
+    const validRoles = ['student', 'advisor'];
+    const selectedRole = (req.body.role && validRoles.includes(req.body.role)) ? req.body.role : 'student';
+
     const [result] = await pool.query(
       'INSERT INTO users (email, name, password_hash, role) VALUES (?, ?, ?, ?)',
-      [email.trim(), name.trim(), hashed, validatedRole]
+      [email.trim(), name.trim(), hashed, selectedRole]
     );
 
-    const user = { id: result.insertId, email: email.trim(), name: name.trim(), role: validatedRole };
+    const user = { id: result.insertId, email: email.trim(), name: name.trim(), role: selectedRole };
     req.session.userId = user.id;
-    req.session.userRole = validatedRole;
+    req.session.userRole = selectedRole;
 
     res.json({ ok: true, data: { user }, message: 'Account created successfully' });
   } catch (err) {

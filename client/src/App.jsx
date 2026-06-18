@@ -1,34 +1,33 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './App.css';
 
 function App() {
+  // Auth state
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState('signin');
+  const [authPage, setAuthPage] = useState('signin');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [selectedRole, setSelectedRole] = useState('student');
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
-  const [signupRole, setSignupRole] = useState('student');
 
-  // Tab state: 'applications' | 'deadlines' | 'users' (admin only)
-  const [activeTab, setActiveTab] = useState('applications');
+  // Navigation
+  const [activePage, setActivePage] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
 
   // Applications state
   const [applications, setApplications] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({
-    school_name: '',
-    program_name: '',
-    program_type: 'MS',
-    fit_level: 'Match',
-    status: 'Researching',
-    app_deadline: '',
-    decision_date: '',
-    notes: ''
+    school_name: '', program_name: '', program_type: 'PhD', fit_level: 'Match',
+    status: 'Researching', app_deadline: '', decision_date: '', notes: '',
+    funding_type: '', stipend_amount: '', gre_required: '', faculty_contact: '',
+    faculty_email: '', program_url: ''
   });
   const [formErrors, setFormErrors] = useState({});
 
@@ -37,1596 +36,1263 @@ function App() {
   const [showDeadlineForm, setShowDeadlineForm] = useState(false);
   const [editingDeadlineId, setEditingDeadlineId] = useState(null);
   const [deadlineFormData, setDeadlineFormData] = useState({
-    application_id: '',
-    title: '',
-    due_date: '',
-    reminder_date: '',
-    notes: ''
+    application_id: '', title: '', due_date: '', reminder_date: '', notes: ''
   });
   const [deadlineFormErrors, setDeadlineFormErrors] = useState({});
 
-  // Advisor system state
+  // Dashboard stats
+  const [stats, setStats] = useState(null);
+
+  // Chat state
+  const [channels, setChannels] = useState([]);
+  const [activeChannel, setActiveChannel] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [messageText, setMessageText] = useState('');
+  const [showNewChannel, setShowNewChannel] = useState(false);
+  const [newChannelName, setNewChannelName] = useState('');
+  const [newChannelDesc, setNewChannelDesc] = useState('');
+  const chatEndRef = useRef(null);
+
+  // Documents & peer review state
+  const [documents, setDocuments] = useState([]);
+  const [showDocForm, setShowDocForm] = useState(false);
+  const [docFormData, setDocFormData] = useState({ title: '', doc_type: 'sop', content: '', application_id: '' });
+  const [activeDoc, setActiveDoc] = useState(null);
+  const [docDetail, setDocDetail] = useState(null);
+  const [reviewerEmail, setReviewerEmail] = useState('');
+  const [pendingReviews, setPendingReviews] = useState([]);
+  const [reviewFeedback, setReviewFeedback] = useState('');
+
+  // Checklist state
+  const [checklists, setChecklists] = useState({});
+  const [showChecklistForm, setShowChecklistForm] = useState(null);
+  const [checklistFormData, setChecklistFormData] = useState({
+    item_name: '', item_type: 'other', due_date: '', notes: '', recommender_name: '', recommender_email: ''
+  });
+
+  // Advisor state
   const [advisorStudents, setAdvisorStudents] = useState([]);
-  const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [studentApps, setStudentApps] = useState([]);
   const [studentDeadlines, setStudentDeadlines] = useState([]);
+  const [comments, setComments] = useState({});
+  const [commentText, setCommentText] = useState('');
+  const [activeCommentApp, setActiveCommentApp] = useState(null);
 
-  // Comments state
-  const [commentsMap, setCommentsMap] = useState({});
-  const [commentingOnApp, setCommentingOnApp] = useState(null);
-  const [newCommentText, setNewCommentText] = useState('');
+  // Admin state
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [allAdvisors, setAllAdvisors] = useState([]);
 
-  // Admin user management state
-  const [allUsers, setAllUsers] = useState([]);
-  const [showAddUserForm, setShowAddUserForm] = useState(false);
-  const [addUserData, setAddUserData] = useState({ name: '', email: '', password: '', role: 'student' });
-  const [addUserError, setAddUserError] = useState('');
+  // AI Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
 
-  // Matching state
-  const [advisorList, setAdvisorList] = useState([]);
-  const [matchRequests, setMatchRequests] = useState([]);
-  const [advisorSearch, setAdvisorSearch] = useState('');
-  const [advisorTab, setAdvisorTab] = useState('students');
-
-  const defaultDeadlineForm = {
-    application_id: '', title: '', due_date: '', reminder_date: '', notes: ''
-  };
-
-  const defaultForm = {
-    school_name: '', program_name: '', program_type: 'MS', fit_level: 'Match',
-    status: 'Researching', app_deadline: '', decision_date: '', notes: ''
-  };
-
-  // Parse { ok, data, error, details } response
+  // ===== HELPERS =====
   function parseFieldErrors(details) {
     const map = {};
-    if (Array.isArray(details)) {
-      details.forEach(d => { if (d.field) map[d.field] = d.message; });
-    }
+    if (Array.isArray(details)) details.forEach(d => { if (d.field) map[d.field] = d.message; });
     return map;
   }
+  const fieldErr = (map, field) => map[field] ? <div className="gp-field-error">{map[field]}</div> : null;
 
+  const statusColors = {
+    Researching: '#6b7280', Applied: '#3b82f6', Accepted: '#10b981', Rejected: '#ef4444', Waitlisted: '#f59e0b'
+  };
+  const fitColors = { Safety: '#10b981', Match: '#3b82f6', Reach: '#f59e0b' };
+
+  const deadlineUrgency = (dueDateStr, isCompleted) => {
+    if (isCompleted) return 'completed';
+    const days = Math.ceil((new Date(dueDateStr) - new Date()) / (1000 * 60 * 60 * 24));
+    if (days < 0) return 'overdue';
+    if (days <= 3) return 'urgent';
+    if (days <= 7) return 'soon';
+    return 'normal';
+  };
+
+  // ===== DATA LOADING =====
   useEffect(() => {
     fetch('/api/me', { credentials: 'include' })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.ok && data.data && data.data.user) setUser(data.data.user);
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok && data.data?.user) setUser(data.data.user);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
 
   useEffect(() => {
-    if (user) {
-      if (user.role === 'advisor') {
-        loadAdvisorStudents();
-        loadMatchRequests();
-      } else {
-        loadApplications();
-        loadDeadlines();
-        if (user.role === 'admin') loadAllUsers();
-        if (user.role === 'student') {
-          loadAdvisorList();
-          loadMatchRequests();
-        }
-      }
+    if (!user) return;
+    if (user.role === 'advisor') {
+      loadAdvisorStudents();
+    } else {
+      loadApplications();
+      loadDeadlines();
+      loadStats();
+      loadDocuments();
+      loadPendingReviews();
     }
+    if (user.role === 'admin') {
+      loadAdminUsers();
+      loadAllAdvisors();
+      loadApplications();
+      loadDeadlines();
+      loadStats();
+      loadDocuments();
+      loadPendingReviews();
+    }
+    loadChannels();
   }, [user]);
 
-  // ===== COMMENTS =====
+  useEffect(() => {
+    if (activeChannel) loadMessages(activeChannel);
+  }, [activeChannel]);
 
-  const loadAllComments = async (apps) => {
-    if (!apps || apps.length === 0) return;
-    const results = await Promise.all(
-      apps.map(app =>
-        fetch(`/api/comments/${app.id}`, { credentials: 'include' })
-          .then(r => r.json())
-          .then(d => ({ appId: app.id, comments: d.ok && d.data?.comments ? d.data.comments : [] }))
-          .catch(() => ({ appId: app.id, comments: [] }))
-      )
-    );
-    const map = {};
-    results.forEach(({ appId, comments }) => { map[appId] = comments; });
-    setCommentsMap(prev => ({ ...prev, ...map }));
-  };
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-  const handlePostComment = async (appId) => {
-    if (!newCommentText.trim()) return;
-    try {
-      const res = await fetch('/api/comments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ application_id: appId, content: newCommentText.trim() })
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setCommentingOnApp(null);
-        setNewCommentText('');
-        const res2 = await fetch(`/api/comments/${appId}`, { credentials: 'include' });
-        const data2 = await res2.json();
-        if (data2.ok) {
-          setCommentsMap(prev => ({ ...prev, [appId]: data2.data?.comments || [] }));
-        }
-      }
-    } catch (err) { console.error('Post comment failed:', err); }
-  };
+  // Auto-refresh messages every 5s when on chat page
+  useEffect(() => {
+    if (activePage !== 'chat' || !activeChannel) return;
+    const interval = setInterval(() => loadMessages(activeChannel), 5000);
+    return () => clearInterval(interval);
+  }, [activePage, activeChannel]);
 
-  const handleDeleteComment = async (commentId, appId) => {
-    try {
-      const res = await fetch(`/api/comments/${commentId}`, { method: 'DELETE', credentials: 'include' });
-      const data = await res.json();
-      if (data.ok) {
-        setCommentsMap(prev => ({
-          ...prev,
-          [appId]: (prev[appId] || []).filter(c => c.id !== commentId)
-        }));
-      }
-    } catch (err) { console.error('Delete comment failed:', err); }
-  };
-
-  // ===== APPLICATIONS =====
+  // Apply dark mode
+  useEffect(() => {
+    document.body.classList.toggle('gp-dark', darkMode);
+  }, [darkMode]);
 
   const loadApplications = async () => {
     try {
       const res = await fetch('/api/applications', { credentials: 'include' });
       const data = await res.json();
-      if (data.ok) {
-        const apps = data.data.applications;
-        setApplications(apps);
-        loadAllComments(apps);
-      }
-    } catch (err) {
-      console.error('Load failed:', err);
-    }
+      if (data.ok) { setApplications(data.data.applications); return data.data.applications; }
+    } catch (err) { console.error('Load failed:', err); }
+    return [];
   };
 
   const loadDeadlines = async () => {
     try {
       const res = await fetch('/api/deadlines', { credentials: 'include' });
       const data = await res.json();
-      if (data.ok) {
-        setDeadlines(data.data.deadlines);
-      }
-    } catch (err) {
-      console.error('Load deadlines failed:', err);
-    }
+      if (data.ok) setDeadlines(data.data.deadlines);
+    } catch (err) { console.error('Load deadlines failed:', err); }
   };
 
-  // ===== ADVISOR =====
+  const loadStats = async () => {
+    try {
+      const res = await fetch('/api/stats', { credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) setStats(data.data);
+    } catch (err) { console.error('Load stats failed:', err); }
+  };
+
+  const loadChannels = async () => {
+    try {
+      const res = await fetch('/api/channels', { credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) {
+        setChannels(data.data.channels);
+        if (!activeChannel && data.data.channels.length > 0) setActiveChannel(data.data.channels[0].id);
+      }
+    } catch (err) { console.error('Load channels failed:', err); }
+  };
+
+  const loadMessages = async (channelId) => {
+    try {
+      const res = await fetch(`/api/messages/${channelId}`, { credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) setMessages(data.data.messages);
+    } catch (err) { console.error('Load messages failed:', err); }
+  };
+
+  const loadDocuments = async () => {
+    try {
+      const res = await fetch('/api/documents', { credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) setDocuments(data.data.documents);
+    } catch (err) { console.error('Load documents failed:', err); }
+  };
+
+  const loadDocDetail = async (docId) => {
+    try {
+      const res = await fetch(`/api/documents/${docId}`, { credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) setDocDetail(data.data);
+    } catch (err) { console.error('Load doc detail failed:', err); }
+  };
+
+  const loadPendingReviews = async () => {
+    try {
+      const res = await fetch('/api/documents/reviews/pending', { credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) setPendingReviews(data.data.reviews);
+    } catch (err) { console.error('Load pending reviews failed:', err); }
+  };
+
+  const loadChecklist = async (appId) => {
+    try {
+      const res = await fetch(`/api/checklists/${appId}`, { credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) setChecklists(prev => ({ ...prev, [appId]: data.data.checklist }));
+    } catch (err) { console.error('Load checklist failed:', err); }
+  };
 
   const loadAdvisorStudents = async () => {
     try {
       const res = await fetch('/api/advisor/students', { credentials: 'include' });
       const data = await res.json();
-      if (data.ok && data.data?.students) setAdvisorStudents(data.data.students);
-    } catch (err) { console.error('Load advisor students failed:', err); }
+      if (data.ok) setAdvisorStudents(data.data.students);
+    } catch (err) { console.error('Load students failed:', err); }
   };
 
-  const handleSelectStudent = async (student) => {
-    setSelectedStudentId(student.id);
-    setSelectedStudent(student);
-    setCommentingOnApp(null);
-    setNewCommentText('');
-    try {
-      const [appsRes, dlsRes] = await Promise.all([
-        fetch(`/api/advisor/students/${student.id}/applications`, { credentials: 'include' }),
-        fetch(`/api/advisor/students/${student.id}/deadlines`, { credentials: 'include' })
-      ]);
-      const [appsData, dlsData] = await Promise.all([appsRes.json(), dlsRes.json()]);
-      if (appsData.ok && appsData.data?.applications) {
-        setStudentApps(appsData.data.applications);
-        loadAllComments(appsData.data.applications);
-      }
-      if (dlsData.ok && dlsData.data?.deadlines) setStudentDeadlines(dlsData.data.deadlines);
-    } catch (err) { console.error('Load student data failed:', err); }
-  };
-
-  // ===== ADMIN =====
-
-  const loadAllUsers = async () => {
+  const loadAdminUsers = async () => {
     try {
       const res = await fetch('/api/admin/users', { credentials: 'include' });
       const data = await res.json();
-      if (data.ok && data.data?.users) setAllUsers(data.data.users);
-    } catch (err) { console.error('Load all users failed:', err); }
+      if (data.ok) setAdminUsers(data.data.users);
+    } catch (err) { console.error('Load admin users failed:', err); }
   };
 
-  const handleAssignAdvisor = async (userId, advisorId) => {
+  const loadAllAdvisors = async () => {
     try {
-      const res = await fetch(`/api/admin/users/${userId}/advisor`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ advisorId: advisorId ? parseInt(advisorId) : null })
-      });
+      const res = await fetch('/api/advisors', { credentials: 'include' });
       const data = await res.json();
-      if (data.ok) loadAllUsers();
-    } catch (err) { console.error('Assign advisor failed:', err); }
-  };
-
-  const handleDeleteUser = async (userId) => {
-    if (!window.confirm('Remove this user? This cannot be undone.')) return;
-    try {
-      const res = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE', credentials: 'include' });
-      const data = await res.json();
-      if (data.ok) loadAllUsers();
-      else alert(data.error || 'Failed to remove user');
-    } catch (err) { console.error('Delete user failed:', err); }
-  };
-
-  const handleAddUser = async (e) => {
-    e.preventDefault();
-    setAddUserError('');
-    try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(addUserData)
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setShowAddUserForm(false);
-        setAddUserData({ name: '', email: '', password: '', role: 'student' });
-        loadAllUsers();
-      } else {
-        setAddUserError(data.error || 'Failed to create user');
-      }
-    } catch (err) { setAddUserError('Could not connect to server'); }
-  };
-
-  // ===== MATCHING =====
-
-  const loadAdvisorList = async () => {
-    try {
-      const res = await fetch('/api/match/advisors', { credentials: 'include' });
-      const data = await res.json();
-      if (data.ok) setAdvisorList(data.data.advisors);
+      if (data.ok) setAllAdvisors(data.data.advisors);
     } catch (err) { console.error('Load advisors failed:', err); }
   };
 
-  const loadMatchRequests = async () => {
+  const loadComments = async (applicationId) => {
     try {
-      const res = await fetch('/api/match/requests', { credentials: 'include' });
+      const res = await fetch(`/api/comments/${applicationId}`, { credentials: 'include' });
       const data = await res.json();
-      if (data.ok) setMatchRequests(data.data.requests);
-    } catch (err) { console.error('Load match requests failed:', err); }
+      if (data.ok) setComments(prev => ({ ...prev, [applicationId]: data.data.comments }));
+    } catch (err) { console.error('Load comments failed:', err); }
   };
 
-  const handleSendMatchRequest = async (advisorId) => {
-    try {
-      const res = await fetch('/api/match/request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ advisorId })
-      });
-      const data = await res.json();
-      if (data.ok) loadMatchRequests();
-      else alert(data.error || 'Failed to send request');
-    } catch (err) { console.error('Send match request failed:', err); }
-  };
-
-  const handleAcceptRequest = async (requestId) => {
-    try {
-      const res = await fetch(`/api/match/requests/${requestId}/accept`, { method: 'PUT', credentials: 'include' });
-      const data = await res.json();
-      if (data.ok) { loadMatchRequests(); loadAdvisorStudents(); }
-    } catch (err) { console.error('Accept request failed:', err); }
-  };
-
-  const handleRejectRequest = async (requestId) => {
-    try {
-      const res = await fetch(`/api/match/requests/${requestId}/reject`, { method: 'PUT', credentials: 'include' });
-      const data = await res.json();
-      if (data.ok) loadMatchRequests();
-    } catch (err) { console.error('Reject request failed:', err); }
-  };
-
-  const handleWithdrawRequest = async (requestId) => {
-    try {
-      const res = await fetch(`/api/match/requests/${requestId}`, { method: 'DELETE', credentials: 'include' });
-      const data = await res.json();
-      if (data.ok) loadMatchRequests();
-    } catch (err) { console.error('Withdraw request failed:', err); }
-  };
-
-  // ===== DEADLINES =====
-
-  const openAddDeadline = () => {
-    setEditingDeadlineId(null);
-    setDeadlineFormData({ ...defaultDeadlineForm, application_id: applications.length > 0 ? String(applications[0].id) : '' });
-    setDeadlineFormErrors({});
-    setShowDeadlineForm(true);
-  };
-
-  const openEditDeadline = (dl) => {
-    setEditingDeadlineId(dl.id);
-    setDeadlineFormData({
-      application_id: String(dl.application_id),
-      title: dl.title || '',
-      due_date: dl.due_date ? dl.due_date.slice(0, 10) : '',
-      reminder_date: dl.reminder_date ? dl.reminder_date.slice(0, 10) : '',
-      notes: dl.notes || ''
-    });
-    setDeadlineFormErrors({});
-    setShowDeadlineForm(true);
-  };
-
-  const handleSubmitDeadline = async (e) => {
-    e.preventDefault();
-    setDeadlineFormErrors({});
-    const url = editingDeadlineId ? `/api/deadlines/${editingDeadlineId}` : '/api/deadlines';
-    const method = editingDeadlineId ? 'PUT' : 'POST';
-    try {
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(deadlineFormData)
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setShowDeadlineForm(false);
-        setEditingDeadlineId(null);
-        setDeadlineFormData(defaultDeadlineForm);
-        loadDeadlines();
-      } else {
-        if (data.details) setDeadlineFormErrors(parseFieldErrors(data.details));
-      }
-    } catch (err) { console.error('Deadline submit failed:', err); }
-  };
-
-  const handleToggleDeadline = async (id) => {
-    try {
-      const res = await fetch(`/api/deadlines/${id}/complete`, { method: 'PUT', credentials: 'include' });
-      const data = await res.json();
-      if (data.ok) loadDeadlines();
-    } catch (err) { console.error('Toggle deadline failed:', err); }
-  };
-
-  const handleDeleteDeadline = async (id) => {
-    if (!confirm('Delete this deadline?')) return;
-    try {
-      const res = await fetch(`/api/deadlines/${id}`, { method: 'DELETE', credentials: 'include' });
-      const data = await res.json();
-      if (data.ok) loadDeadlines();
-    } catch (err) { console.error('Delete deadline failed:', err); }
-  };
-
-  const deadlineUrgency = (dueDateStr, isCompleted) => {
-    if (isCompleted) return 'success';
-    const now = new Date();
-    const due = new Date(dueDateStr);
-    const daysLeft = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
-    if (daysLeft < 0) return 'danger';
-    if (daysLeft <= 3) return 'warning';
-    if (daysLeft <= 7) return 'info';
-    return 'secondary';
-  };
-
-  // ===== AUTH =====
-
-  const switchPage = (p) => {
-    setPage(p); setError(''); setFieldErrors({});
-    setName(''); setEmail(''); setPassword(''); setShowPassword(false); setSignupRole('student');
-  };
-
+  // ===== AUTH HANDLERS =====
   const handleSignUp = async (e) => {
-    e.preventDefault();
-    setError(''); setFieldErrors({});
+    e.preventDefault(); setError(''); setFieldErrors({});
     try {
       const res = await fetch('/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ name, email, password, role: signupRole })
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ name, email, password, role: selectedRole })
       });
       const data = await res.json();
-      if (data.ok) {
-        setUser(data.data.user);
-      } else {
-        setError(data.error || 'Registration failed');
-        if (data.details) setFieldErrors(parseFieldErrors(data.details));
-      }
+      if (data.ok) setUser(data.data.user);
+      else { setError(data.error || 'Registration failed'); if (data.details) setFieldErrors(parseFieldErrors(data.details)); }
     } catch { setError('Could not connect to server'); }
   };
 
   const handleSignIn = async (e) => {
-    e.preventDefault();
-    setError(''); setFieldErrors({});
+    e.preventDefault(); setError(''); setFieldErrors({});
     try {
       const res = await fetch('/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ email, password })
       });
       const data = await res.json();
-      if (data.ok) {
-        setUser(data.data.user);
-      } else {
-        setError(data.error || 'Login failed');
-        if (data.details) setFieldErrors(parseFieldErrors(data.details));
-      }
+      if (data.ok) setUser(data.data.user);
+      else { setError(data.error || 'Login failed'); if (data.details) setFieldErrors(parseFieldErrors(data.details)); }
     } catch { setError('Could not connect to server'); }
   };
 
   const handleLogout = async () => {
     try {
       await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
-      setUser(null);
-      setApplications([]);
-      setDeadlines([]);
-      setAdvisorStudents([]);
-      setSelectedStudentId(null);
-      setSelectedStudent(null);
-      setStudentApps([]);
-      setStudentDeadlines([]);
-      setCommentsMap({});
-      setAllUsers([]);
-      setAdvisorList([]);
-      setMatchRequests([]);
-      setAdvisorSearch('');
-      setAdvisorTab('students');
-      setEmail(''); setPassword(''); setName('');
-      setError(''); setFieldErrors({});
-      setActiveTab('applications');
-      setPage('signin');
+      setUser(null); setApplications([]); setDeadlines([]); setStats(null);
+      setChannels([]); setMessages([]); setDocuments([]); setActiveChannel(null);
+      setAdvisorStudents([]); setSelectedStudent(null); setActivePage('dashboard');
+      setAuthPage('signin'); setError('');
     } catch (err) { console.error('Logout failed:', err); }
   };
 
-  // ===== APPLICATION FORM =====
-
-  const openAddForm = () => {
-    setEditingId(null);
-    setFormData(defaultForm);
-    setFormErrors({});
-    setShowForm(true);
+  // ===== APPLICATION HANDLERS =====
+  const defaultForm = {
+    school_name: '', program_name: '', program_type: 'PhD', fit_level: 'Match',
+    status: 'Researching', app_deadline: '', decision_date: '', notes: '',
+    funding_type: '', stipend_amount: '', gre_required: '', faculty_contact: '',
+    faculty_email: '', program_url: ''
   };
 
+  const openAddForm = () => { setEditingId(null); setFormData(defaultForm); setFormErrors({}); setShowForm(true); };
   const openEditForm = (app) => {
     setEditingId(app.id);
     setFormData({
-      school_name: app.school_name || '',
-      program_name: app.program_name || '',
-      program_type: app.program_type || 'MS',
-      fit_level: app.fit_level || 'Match',
+      school_name: app.school_name || '', program_name: app.program_name || '',
+      program_type: app.program_type || 'PhD', fit_level: app.fit_level || 'Match',
       status: app.status || 'Researching',
       app_deadline: app.app_deadline ? app.app_deadline.slice(0, 10) : '',
       decision_date: app.decision_date ? app.decision_date.slice(0, 10) : '',
-      notes: app.notes || ''
+      notes: app.notes || '', funding_type: app.funding_type || '',
+      stipend_amount: app.stipend_amount || '', gre_required: app.gre_required ?? '',
+      faculty_contact: app.faculty_contact || '', faculty_email: app.faculty_email || '',
+      program_url: app.program_url || ''
     });
-    setFormErrors({});
-    setShowForm(true);
+    setFormErrors({}); setShowForm(true);
   };
 
   const handleSubmitApplication = async (e) => {
-    e.preventDefault();
-    setFormErrors({});
-
+    e.preventDefault(); setFormErrors({});
     const url = editingId ? `/api/applications/${editingId}` : '/api/applications';
-    const method = editingId ? 'PUT' : 'POST';
-
     try {
       const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(formData)
+        method: editingId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', body: JSON.stringify(formData)
       });
       const data = await res.json();
-
-      if (data.ok) {
-        setShowForm(false);
-        setEditingId(null);
-        setFormData(defaultForm);
-        loadApplications();
-      } else {
-        if (data.details) setFormErrors(parseFieldErrors(data.details));
-      }
+      if (data.ok) { setShowForm(false); setEditingId(null); setFormData(defaultForm); loadApplications(); loadStats(); }
+      else if (data.details) setFormErrors(parseFieldErrors(data.details));
     } catch (err) { console.error('Submit failed:', err); }
   };
 
   const handleStatusChange = async (id, newStatus) => {
     try {
-      const res = await fetch(`/api/applications/${id}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ status: newStatus })
+      await fetch(`/api/applications/${id}/status`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', body: JSON.stringify({ status: newStatus })
       });
-      const data = await res.json();
-      if (data.ok) loadApplications();
+      loadApplications(); loadStats();
     } catch (err) { console.error('Status change failed:', err); }
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this application?')) return;
+    if (!confirm('Delete this application and all its data?')) return;
     try {
-      const res = await fetch(`/api/applications/${id}`, { method: 'DELETE', credentials: 'include' });
-      const data = await res.json();
-      if (data.ok) loadApplications();
+      await fetch(`/api/applications/${id}`, { method: 'DELETE', credentials: 'include' });
+      loadApplications(); loadStats();
     } catch (err) { console.error('Delete failed:', err); }
   };
 
-  // ===== HELPERS =====
+  // ===== DEADLINE HANDLERS =====
+  const defaultDeadlineForm = { application_id: '', title: '', due_date: '', reminder_date: '', notes: '' };
 
-  const statusBadge = (status) => {
-    const colors = {
-      Researching: 'secondary', Applied: 'primary',
-      Accepted: 'success', Rejected: 'danger', Waitlisted: 'warning'
-    };
-    return `badge bg-${colors[status] || 'secondary'}`;
+  const handleSubmitDeadline = async (e) => {
+    e.preventDefault(); setDeadlineFormErrors({});
+    const url = editingDeadlineId ? `/api/deadlines/${editingDeadlineId}` : '/api/deadlines';
+    try {
+      const res = await fetch(url, {
+        method: editingDeadlineId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', body: JSON.stringify(deadlineFormData)
+      });
+      const data = await res.json();
+      if (data.ok) { setShowDeadlineForm(false); setEditingDeadlineId(null); setDeadlineFormData(defaultDeadlineForm); loadDeadlines(); loadStats(); }
+      else if (data.details) setDeadlineFormErrors(parseFieldErrors(data.details));
+    } catch (err) { console.error('Deadline submit failed:', err); }
   };
 
-  const fitBadge = (fit) => {
-    const colors = { Safety: 'success', Match: 'info', Reach: 'warning' };
-    return `badge bg-${colors[fit] || 'secondary'} bg-opacity-75`;
+  const handleToggleDeadline = async (id) => {
+    try { await fetch(`/api/deadlines/${id}/complete`, { method: 'PUT', credentials: 'include' }); loadDeadlines(); loadStats(); }
+    catch (err) { console.error('Toggle deadline failed:', err); }
   };
 
-  const roleBadge = user && user.role === 'admin'
-    ? <span className="badge bg-danger ms-2">Admin</span>
-    : user && user.role === 'advisor'
-    ? <span className="badge bg-warning ms-2">Advisor</span>
-    : <span className="badge bg-info ms-2">Student</span>;
+  const handleDeleteDeadline = async (id) => {
+    if (!confirm('Delete this deadline?')) return;
+    try { await fetch(`/api/deadlines/${id}`, { method: 'DELETE', credentials: 'include' }); loadDeadlines(); loadStats(); }
+    catch (err) { console.error('Delete deadline failed:', err); }
+  };
 
-  const fieldErr = (map, field) => map[field]
-    ? <div className="text-danger small mt-1"><i className="bi bi-exclamation-circle me-1"></i>{map[field]}</div>
-    : null;
+  // ===== CHAT HANDLERS =====
+  const handleSendMessage = async () => {
+    if (!messageText.trim() || !activeChannel) return;
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ channel_id: activeChannel, content: messageText })
+      });
+      const data = await res.json();
+      if (data.ok) { setMessageText(''); loadMessages(activeChannel); }
+    } catch (err) { console.error('Send message failed:', err); }
+  };
 
+  const handleCreateChannel = async () => {
+    if (!newChannelName.trim()) return;
+    try {
+      const res = await fetch('/api/channels', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ name: newChannelName, description: newChannelDesc })
+      });
+      const data = await res.json();
+      if (data.ok) { setShowNewChannel(false); setNewChannelName(''); setNewChannelDesc(''); loadChannels(); }
+    } catch (err) { console.error('Create channel failed:', err); }
+  };
+
+  // ===== DOCUMENT HANDLERS =====
+  const handleCreateDoc = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/documents', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(docFormData)
+      });
+      const data = await res.json();
+      if (data.ok) { setShowDocForm(false); setDocFormData({ title: '', doc_type: 'sop', content: '', application_id: '' }); loadDocuments(); }
+    } catch (err) { console.error('Create doc failed:', err); }
+  };
+
+  const handleRequestReview = async (docId) => {
+    if (!reviewerEmail.trim()) return;
+    try {
+      const res = await fetch(`/api/documents/${docId}/request-review`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ reviewer_email: reviewerEmail })
+      });
+      const data = await res.json();
+      if (data.ok) { setReviewerEmail(''); loadDocDetail(docId); alert('Review request sent!'); }
+      else alert(data.error);
+    } catch (err) { console.error('Request review failed:', err); }
+  };
+
+  const handleSubmitReview = async (reviewId) => {
+    try {
+      await fetch(`/api/documents/reviews/${reviewId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ overall_feedback: reviewFeedback, status: 'completed', rating: 5 })
+      });
+      setReviewFeedback(''); loadPendingReviews();
+      if (activeDoc) loadDocDetail(activeDoc);
+      alert('Review submitted!');
+    } catch (err) { console.error('Submit review failed:', err); }
+  };
+
+  // ===== CHECKLIST HANDLERS =====
+  const handleGenerateChecklist = async (appId) => {
+    try {
+      await fetch(`/api/checklists/${appId}/generate`, { method: 'POST', credentials: 'include' });
+      loadChecklist(appId);
+    } catch (err) { console.error('Generate checklist failed:', err); }
+  };
+
+  const handleToggleChecklistItem = async (itemId, appId) => {
+    try {
+      await fetch(`/api/checklists/${itemId}/toggle`, { method: 'PUT', credentials: 'include' });
+      loadChecklist(appId);
+    } catch (err) { console.error('Toggle checklist failed:', err); }
+  };
+
+  const handleAddChecklistItem = async (appId) => {
+    try {
+      await fetch('/api/checklists', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ ...checklistFormData, application_id: appId })
+      });
+      setShowChecklistForm(null);
+      setChecklistFormData({ item_name: '', item_type: 'other', due_date: '', notes: '', recommender_name: '', recommender_email: '' });
+      loadChecklist(appId);
+    } catch (err) { console.error('Add checklist item failed:', err); }
+  };
+
+  // ===== ADVISOR HANDLERS =====
+  const viewStudent = async (studentId) => {
+    try {
+      const res = await fetch(`/api/advisor/students/${studentId}`, { credentials: 'include' });
+      const data = await res.json();
+      if (data.ok) {
+        setSelectedStudent(data.data.student); setStudentApps(data.data.applications); setStudentDeadlines(data.data.deadlines);
+        for (const app of data.data.applications) loadComments(app.id);
+      }
+    } catch (err) { console.error('Load student detail failed:', err); }
+  };
+
+  const handlePostComment = async (applicationId) => {
+    if (!commentText.trim()) return;
+    try {
+      const res = await fetch('/api/comments', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ application_id: applicationId, content: commentText })
+      });
+      const data = await res.json();
+      if (data.ok) { setCommentText(''); setActiveCommentApp(null); loadComments(applicationId); }
+    } catch (err) { console.error('Post comment failed:', err); }
+  };
+
+  const handleAssignAdvisor = async (studentId, advisorId) => {
+    try {
+      await fetch('/api/admin/assign-advisor', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ studentId, advisorId: advisorId || null })
+      });
+      loadAdminUsers();
+    } catch (err) { console.error('Assign advisor failed:', err); }
+  };
+
+  // ===== LOADING =====
   if (loading) {
     return (
-      <div className="gp-loading">
-        <div className="spinner-border text-light" role="status"></div>
+      <div className="gp-loading-screen">
+        <div className="gp-loading-spinner"></div>
+        <div className="gp-loading-text">GradPath</div>
       </div>
     );
   }
 
-  // ===== ADVISOR DASHBOARD =====
-
-  const renderAdvisorDashboard = () => (
-    <div className="container py-4" style={{ maxWidth: '1100px' }}>
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <div>
-          <h2 className="fw-bold mb-0 text-white">Advisor Dashboard</h2>
-          <p className="text-white-50 mb-0">
-            {selectedStudentId
-              ? `Viewing ${selectedStudent?.name}'s applications`
-              : advisorTab === 'requests' ? 'Student match requests' : 'Manage your student roster'}
-          </p>
+  // ===== AUTH SCREENS =====
+  if (!user) {
+    return (
+      <div className="gp-auth-container">
+        <div className="gp-auth-left">
+          <div className="gp-auth-brand">
+            <div className="gp-logo">GP</div>
+            <h1>GradPath</h1>
+            <p>Your PhD application command center. Track schools, collaborate with peers, and land your dream program.</p>
+          </div>
+          <div className="gp-auth-features">
+            <div className="gp-auth-feature"><span className="gp-feature-icon">&#x1F393;</span> Track applications across programs</div>
+            <div className="gp-auth-feature"><span className="gp-feature-icon">&#x1F4AC;</span> Chat with fellow applicants</div>
+            <div className="gp-auth-feature"><span className="gp-feature-icon">&#x1F4DD;</span> Peer review SOPs and documents</div>
+            <div className="gp-auth-feature"><span className="gp-feature-icon">&#x1F50D;</span> AI-powered school research</div>
+          </div>
         </div>
-        {selectedStudentId && (
-          <button
-            className="btn btn-outline-light rounded-pill px-4"
-            onClick={() => { setSelectedStudentId(null); setSelectedStudent(null); setStudentApps([]); setStudentDeadlines([]); setCommentingOnApp(null); }}>
-            <i className="bi bi-arrow-left me-2"></i>Back to Roster
-          </button>
-        )}
-      </div>
+        <div className="gp-auth-right">
+          <div className="gp-auth-card">
+            <h2>{authPage === 'signin' ? 'Welcome back' : 'Create your account'}</h2>
+            <p className="gp-auth-subtitle">{authPage === 'signin' ? 'Sign in to continue' : 'Join the PhD community'}</p>
 
-      {!selectedStudentId && (
-        <ul className="nav nav-pills mb-4">
-          <li className="nav-item">
-            <button className={`nav-link ${advisorTab === 'students' ? 'active' : 'text-white'}`}
-              style={advisorTab === 'students' ? { backgroundColor: '#fff', color: '#1a3c6e' } : {}}
-              onClick={() => setAdvisorTab('students')}>
-              <i className="bi bi-people me-1"></i>My Students
-              <span className="badge bg-secondary ms-2">{advisorStudents.length}</span>
-            </button>
-          </li>
-          <li className="nav-item ms-2">
-            <button className={`nav-link ${advisorTab === 'requests' ? 'active' : 'text-white'}`}
-              style={advisorTab === 'requests' ? { backgroundColor: '#fff', color: '#1a3c6e' } : {}}
-              onClick={() => setAdvisorTab('requests')}>
-              <i className="bi bi-person-check me-1"></i>Match Requests
-              {matchRequests.length > 0 && (
-                <span className="badge bg-warning ms-2">{matchRequests.length}</span>
-              )}
-            </button>
-          </li>
-        </ul>
-      )}
+            {error && <div className="gp-error-banner">{error}</div>}
 
-      {selectedStudentId ? (
-        <>
-          {studentApps.length === 0 ? (
-            <div className="card gp-welcome-card text-center p-5">
-              <div className="py-4">
-                <i className="bi bi-inbox text-muted" style={{ fontSize: '3rem' }}></i>
-                <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No applications yet</h4>
-                <p className="text-muted">This student has not added any applications</p>
-              </div>
-            </div>
-          ) : (
-            <div className="row g-3">
-              {studentApps.map(app => (
-                <div key={app.id} className="col-md-6 col-lg-4">
-                  <div className="card gp-welcome-card h-100">
-                    <div className="gp-card-accent"></div>
-                    <div className="card-body p-3">
-                      <h6 className="fw-bold mb-1" style={{ color: '#1a3c6e' }}>{app.school_name}</h6>
-                      <p className="text-muted small mb-1">{app.program_name} ({app.program_type})</p>
-                      <div className="d-flex gap-2 mb-2">
-                        <span className={statusBadge(app.status)}>{app.status}</span>
-                        <span className={fitBadge(app.fit_level)}>{app.fit_level}</span>
-                      </div>
-                      {app.app_deadline && (
-                        <p className="small text-muted mb-1">
-                          <i className="bi bi-calendar-event me-1"></i>
-                          Deadline: {new Date(app.app_deadline).toLocaleDateString()}
-                        </p>
-                      )}
-                      {app.notes && (
-                        <p className="small text-muted mb-2 fst-italic">"{app.notes}"</p>
-                      )}
-
-                      {/* Comments section */}
-                      <div className="mt-2 pt-2 border-top">
-                        <small className="fw-semibold text-muted">
-                          <i className="bi bi-chat-quote me-1"></i>Feedback
-                        </small>
-                        {(commentsMap[app.id] || []).map(c => (
-                          <div key={c.id} className="small p-2 mt-1 bg-light rounded">
-                            <div className="d-flex justify-content-between">
-                              <span className="text-muted fw-semibold">{c.author_name}</span>
-                              <button
-                                className="btn btn-sm btn-link text-danger p-0"
-                                style={{ fontSize: '0.7rem' }}
-                                onClick={() => handleDeleteComment(c.id, app.id)}>
-                                <i className="bi bi-x"></i>
-                              </button>
-                            </div>
-                            <div>{c.content}</div>
-                          </div>
-                        ))}
-
-                        {commentingOnApp === app.id ? (
-                          <div className="mt-2 d-flex gap-2">
-                            <input
-                              type="text"
-                              className="form-control form-control-sm"
-                              placeholder="Add feedback..."
-                              value={newCommentText}
-                              onChange={e => setNewCommentText(e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && handlePostComment(app.id)}
-                            />
-                            <button className="btn btn-primary btn-sm" onClick={() => handlePostComment(app.id)}>Post</button>
-                            <button className="btn btn-outline-secondary btn-sm" onClick={() => { setCommentingOnApp(null); setNewCommentText(''); }}>✕</button>
-                          </div>
-                        ) : (
-                          <button
-                            className="btn btn-sm btn-outline-primary mt-2"
-                            onClick={() => { setCommentingOnApp(app.id); setNewCommentText(''); }}>
-                            <i className="bi bi-plus me-1"></i>Add Feedback
-                          </button>
-                        )}
-                      </div>
+            <form onSubmit={authPage === 'signin' ? handleSignIn : handleSignUp}>
+              {authPage === 'signup' && (
+                <>
+                  <div className="gp-form-group">
+                    <label>Full Name</label>
+                    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Your full name" className={fieldErrors.name ? 'gp-input-error' : ''} />
+                    {fieldErr(fieldErrors, 'name')}
+                  </div>
+                  <div className="gp-form-group">
+                    <label>I am a...</label>
+                    <div className="gp-role-selector">
+                      <button type="button" className={`gp-role-btn ${selectedRole === 'student' ? 'active' : ''}`} onClick={() => setSelectedRole('student')}>
+                        <span className="gp-role-icon">&#x1F393;</span> Student
+                      </button>
+                      <button type="button" className={`gp-role-btn ${selectedRole === 'advisor' ? 'active' : ''}`} onClick={() => setSelectedRole('advisor')}>
+                        <span className="gp-role-icon">&#x1F4DA;</span> Advisor
+                      </button>
                     </div>
                   </div>
+                </>
+              )}
+              <div className="gp-form-group">
+                <label>Email</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className={fieldErrors.email ? 'gp-input-error' : ''} />
+                {fieldErr(fieldErrors, 'email')}
+              </div>
+              <div className="gp-form-group">
+                <label>Password</label>
+                <div className="gp-password-wrap">
+                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" className={fieldErrors.password ? 'gp-input-error' : ''} />
+                  <button type="button" className="gp-password-toggle" onClick={() => setShowPassword(!showPassword)}>{showPassword ? 'Hide' : 'Show'}</button>
                 </div>
-              ))}
+                {fieldErr(fieldErrors, 'password')}
+              </div>
+              <button type="submit" className="gp-btn-primary gp-btn-full">{authPage === 'signin' ? 'Sign In' : 'Create Account'}</button>
+            </form>
+
+            <div className="gp-auth-switch">
+              {authPage === 'signin' ? (
+                <p>Don't have an account? <button onClick={() => { setAuthPage('signup'); setError(''); setFieldErrors({}); }}>Sign Up</button></p>
+              ) : (
+                <p>Already have an account? <button onClick={() => { setAuthPage('signin'); setError(''); setFieldErrors({}); }}>Sign In</button></p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===== NAV ITEMS =====
+  const navItems = user.role === 'advisor' ? [
+    { id: 'advisor', label: 'Students', icon: '&#x1F465;' },
+    { id: 'chat', label: 'Chat', icon: '&#x1F4AC;' },
+  ] : [
+    { id: 'dashboard', label: 'Dashboard', icon: '&#x1F4CA;' },
+    { id: 'schools', label: 'My Schools', icon: '&#x1F3EB;' },
+    { id: 'timeline', label: 'Timeline', icon: '&#x1F4C5;' },
+    { id: 'documents', label: 'Documents', icon: '&#x1F4DD;' },
+    { id: 'chat', label: 'Chat', icon: '&#x1F4AC;' },
+    ...(user.role === 'admin' ? [{ id: 'admin', label: 'Admin', icon: '&#x2699;&#xFE0F;' }] : []),
+  ];
+
+  // ===== MAIN LAYOUT =====
+  return (
+    <div className={`gp-app ${darkMode ? 'gp-dark' : ''}`}>
+      {/* Sidebar */}
+      <aside className={`gp-sidebar ${sidebarOpen ? '' : 'gp-sidebar-collapsed'}`}>
+        <div className="gp-sidebar-header">
+          <div className="gp-sidebar-logo" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            <span className="gp-logo-sm">GP</span>
+            {sidebarOpen && <span className="gp-logo-text">GradPath</span>}
+          </div>
+        </div>
+        <nav className="gp-sidebar-nav">
+          {navItems.map(item => (
+            <button key={item.id} className={`gp-nav-item ${activePage === item.id ? 'active' : ''}`}
+              onClick={() => setActivePage(item.id)}>
+              <span className="gp-nav-icon" dangerouslySetInnerHTML={{ __html: item.icon }}></span>
+              {sidebarOpen && <span className="gp-nav-label">{item.label}</span>}
+            </button>
+          ))}
+        </nav>
+        <div className="gp-sidebar-footer">
+          <button className="gp-nav-item" onClick={() => setDarkMode(!darkMode)}>
+            <span className="gp-nav-icon">{darkMode ? '☀️' : '🌙'}</span>
+            {sidebarOpen && <span className="gp-nav-label">{darkMode ? 'Light Mode' : 'Dark Mode'}</span>}
+          </button>
+          <div className="gp-user-info" onClick={handleLogout}>
+            <div className="gp-avatar">{user.name?.charAt(0).toUpperCase()}</div>
+            {sidebarOpen && (
+              <div className="gp-user-details">
+                <div className="gp-user-name">{user.name}</div>
+                <div className="gp-user-role">{user.role} &middot; Sign out</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="gp-main">
+        <header className="gp-topbar">
+          <button className="gp-menu-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>&#9776;</button>
+          <h1 className="gp-page-title">{navItems.find(n => n.id === activePage)?.label || 'GradPath'}</h1>
+          <div className="gp-topbar-right">
+            {pendingReviews.length > 0 && (
+              <button className="gp-notif-btn" onClick={() => setActivePage('documents')}>
+                {pendingReviews.length} review{pendingReviews.length > 1 ? 's' : ''}
+              </button>
+            )}
+          </div>
+        </header>
+
+        <div className="gp-content">
+
+          {/* ===== DASHBOARD ===== */}
+          {activePage === 'dashboard' && (
+            <div className="gp-dashboard">
+              <div className="gp-stats-grid">
+                <div className="gp-stat-card">
+                  <div className="gp-stat-number">{stats?.totalApplications || 0}</div>
+                  <div className="gp-stat-label">Applications</div>
+                </div>
+                <div className="gp-stat-card gp-stat-accent">
+                  <div className="gp-stat-number">{stats?.statusBreakdown?.find(s => s.status === 'Accepted')?.count || 0}</div>
+                  <div className="gp-stat-label">Accepted</div>
+                </div>
+                <div className="gp-stat-card">
+                  <div className="gp-stat-number">{stats?.completedDeadlines || 0}/{stats?.totalDeadlines || 0}</div>
+                  <div className="gp-stat-label">Deadlines Done</div>
+                </div>
+                <div className="gp-stat-card">
+                  <div className="gp-stat-number">{stats?.documentCount || 0}</div>
+                  <div className="gp-stat-label">Documents</div>
+                </div>
+              </div>
+
+              {/* Status breakdown */}
+              {stats?.statusBreakdown?.length > 0 && (
+                <div className="gp-card gp-mb">
+                  <h3 className="gp-card-title">Application Status</h3>
+                  <div className="gp-status-bars">
+                    {stats.statusBreakdown.map(s => (
+                      <div key={s.status} className="gp-status-bar-row">
+                        <span className="gp-status-label" style={{ color: statusColors[s.status] }}>{s.status}</span>
+                        <div className="gp-status-bar-track">
+                          <div className="gp-status-bar-fill" style={{ width: `${(s.count / stats.totalApplications) * 100}%`, background: statusColors[s.status] }}></div>
+                        </div>
+                        <span className="gp-status-count">{s.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Upcoming deadlines */}
+              {stats?.upcomingDeadlines?.length > 0 && (
+                <div className="gp-card gp-mb">
+                  <h3 className="gp-card-title">Upcoming Deadlines</h3>
+                  {stats.upcomingDeadlines.map(dl => {
+                    const days = Math.ceil((new Date(dl.due_date) - new Date()) / (1000*60*60*24));
+                    return (
+                      <div key={dl.id} className="gp-deadline-row">
+                        <div className="gp-deadline-info">
+                          <div className="gp-deadline-title">{dl.title}</div>
+                          <div className="gp-deadline-school">{dl.school_name} &middot; {dl.program_name}</div>
+                        </div>
+                        <div className={`gp-deadline-badge ${days <= 3 ? 'urgent' : days <= 7 ? 'soon' : ''}`}>
+                          {days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `${days} days`}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Pending reviews notification */}
+              {pendingReviews.length > 0 && (
+                <div className="gp-card gp-card-highlight gp-mb">
+                  <h3 className="gp-card-title">Peer Reviews Waiting</h3>
+                  <p>{pendingReviews.length} document{pendingReviews.length > 1 ? 's' : ''} need{pendingReviews.length === 1 ? 's' : ''} your review</p>
+                  <button className="gp-btn-primary" onClick={() => setActivePage('documents')}>Review Now</button>
+                </div>
+              )}
+
+              {applications.length === 0 && (
+                <div className="gp-card gp-empty-state">
+                  <div className="gp-empty-icon">&#x1F680;</div>
+                  <h3>Start your PhD journey</h3>
+                  <p>Add your first school to begin tracking applications</p>
+                  <button className="gp-btn-primary" onClick={() => { setActivePage('schools'); setTimeout(openAddForm, 100); }}>Add School</button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Student's deadlines summary */}
-          {studentDeadlines.length > 0 && (
-            <div className="mt-4">
-              <h5 className="text-white mb-3"><i className="bi bi-alarm me-2"></i>Deadlines</h5>
-              <div className="row g-2">
-                {studentDeadlines.map(dl => (
-                  <div key={dl.id} className="col-md-4">
-                    <div className={`card gp-welcome-card ${dl.is_completed ? 'opacity-75' : ''}`}>
-                      <div className="card-body p-2 d-flex justify-content-between align-items-center">
-                        <div>
-                          <div className="small fw-semibold" style={{ color: '#1a3c6e' }}>{dl.title}</div>
-                          <div className="small text-muted">{dl.school_name} · {new Date(dl.due_date).toLocaleDateString()}</div>
+          {/* ===== MY SCHOOLS ===== */}
+          {activePage === 'schools' && (
+            <div className="gp-schools">
+              <div className="gp-page-actions">
+                <button className="gp-btn-primary" onClick={openAddForm}>+ Add School</button>
+              </div>
+
+              {/* Application Form Modal */}
+              {showForm && (
+                <div className="gp-modal-overlay" onClick={() => setShowForm(false)}>
+                  <div className="gp-modal" onClick={e => e.stopPropagation()}>
+                    <div className="gp-modal-header">
+                      <h3>{editingId ? 'Edit Application' : 'Add New School'}</h3>
+                      <button className="gp-modal-close" onClick={() => setShowForm(false)}>&times;</button>
+                    </div>
+                    <form onSubmit={handleSubmitApplication} className="gp-modal-body">
+                      <div className="gp-form-row">
+                        <div className="gp-form-group">
+                          <label>School Name *</label>
+                          <input value={formData.school_name} onChange={e => setFormData({...formData, school_name: e.target.value})} placeholder="e.g. MIT" />
+                          {fieldErr(formErrors, 'school_name')}
                         </div>
-                        <span className={`badge bg-${deadlineUrgency(dl.due_date, dl.is_completed)}`}>
-                          {dl.is_completed ? 'Done' : 'Pending'}
-                        </span>
+                        <div className="gp-form-group">
+                          <label>Program Name *</label>
+                          <input value={formData.program_name} onChange={e => setFormData({...formData, program_name: e.target.value})} placeholder="e.g. Computer Science" />
+                          {fieldErr(formErrors, 'program_name')}
+                        </div>
+                      </div>
+                      <div className="gp-form-row">
+                        <div className="gp-form-group">
+                          <label>Degree Type</label>
+                          <select value={formData.program_type} onChange={e => setFormData({...formData, program_type: e.target.value})}>
+                            <option value="PhD">PhD</option><option value="MS">MS</option><option value="MBA">MBA</option><option value="Other">Other</option>
+                          </select>
+                        </div>
+                        <div className="gp-form-group">
+                          <label>Fit Level</label>
+                          <select value={formData.fit_level} onChange={e => setFormData({...formData, fit_level: e.target.value})}>
+                            <option value="Safety">Safety</option><option value="Match">Match</option><option value="Reach">Reach</option>
+                          </select>
+                        </div>
+                        <div className="gp-form-group">
+                          <label>Status</label>
+                          <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                            <option>Researching</option><option>Applied</option><option>Accepted</option><option>Rejected</option><option>Waitlisted</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="gp-form-row">
+                        <div className="gp-form-group"><label>Application Deadline</label><input type="date" value={formData.app_deadline} onChange={e => setFormData({...formData, app_deadline: e.target.value})} /></div>
+                        <div className="gp-form-group"><label>Decision Date</label><input type="date" value={formData.decision_date} onChange={e => setFormData({...formData, decision_date: e.target.value})} /></div>
+                      </div>
+
+                      <h4 className="gp-form-section-title">PhD Details</h4>
+                      <div className="gp-form-row">
+                        <div className="gp-form-group"><label>Funding Type</label><input value={formData.funding_type} onChange={e => setFormData({...formData, funding_type: e.target.value})} placeholder="e.g. TA, RA, Fellowship" /></div>
+                        <div className="gp-form-group"><label>Stipend ($/yr)</label><input type="number" value={formData.stipend_amount} onChange={e => setFormData({...formData, stipend_amount: e.target.value})} placeholder="e.g. 35000" /></div>
+                        <div className="gp-form-group"><label>GRE Required?</label>
+                          <select value={formData.gre_required} onChange={e => setFormData({...formData, gre_required: e.target.value})}>
+                            <option value="">Unknown</option><option value="1">Yes</option><option value="0">No / Waived</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="gp-form-row">
+                        <div className="gp-form-group"><label>Faculty Contact</label><input value={formData.faculty_contact} onChange={e => setFormData({...formData, faculty_contact: e.target.value})} placeholder="Prof. name" /></div>
+                        <div className="gp-form-group"><label>Faculty Email</label><input value={formData.faculty_email} onChange={e => setFormData({...formData, faculty_email: e.target.value})} placeholder="professor@school.edu" /></div>
+                      </div>
+                      <div className="gp-form-group"><label>Program URL</label><input value={formData.program_url} onChange={e => setFormData({...formData, program_url: e.target.value})} placeholder="https://..." /></div>
+                      <div className="gp-form-group"><label>Notes</label><textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} rows={3} placeholder="Any additional notes..."></textarea></div>
+                      <div className="gp-modal-footer"><button type="button" className="gp-btn-secondary" onClick={() => setShowForm(false)}>Cancel</button><button type="submit" className="gp-btn-primary">{editingId ? 'Save Changes' : 'Add School'}</button></div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* School Cards */}
+              {applications.length === 0 ? (
+                <div className="gp-card gp-empty-state"><div className="gp-empty-icon">&#x1F3EB;</div><h3>No schools yet</h3><p>Start by adding the PhD programs you're interested in</p></div>
+              ) : (
+                <div className="gp-school-grid">
+                  {applications.map(app => (
+                    <div key={app.id} className="gp-school-card">
+                      <div className="gp-school-card-header">
+                        <div>
+                          <h3 className="gp-school-name">{app.school_name}</h3>
+                          <p className="gp-school-program">{app.program_name} &middot; {app.program_type}</p>
+                        </div>
+                        <div className="gp-school-actions">
+                          <button className="gp-btn-icon" onClick={() => openEditForm(app)} title="Edit">&#9998;</button>
+                          <button className="gp-btn-icon gp-btn-danger" onClick={() => handleDelete(app.id)} title="Delete">&#x1F5D1;</button>
+                        </div>
+                      </div>
+                      <div className="gp-school-card-body">
+                        <div className="gp-school-badges">
+                          <span className="gp-badge" style={{ background: statusColors[app.status] + '20', color: statusColors[app.status] }}>{app.status}</span>
+                          <span className="gp-badge" style={{ background: fitColors[app.fit_level] + '20', color: fitColors[app.fit_level] }}>{app.fit_level}</span>
+                          {app.gre_required === 0 && <span className="gp-badge gp-badge-success">No GRE</span>}
+                        </div>
+
+                        <select className="gp-status-select" value={app.status} onChange={e => handleStatusChange(app.id, e.target.value)}>
+                          <option>Researching</option><option>Applied</option><option>Accepted</option><option>Rejected</option><option>Waitlisted</option>
+                        </select>
+
+                        {(app.app_deadline || app.decision_date) && (
+                          <div className="gp-school-dates">
+                            {app.app_deadline && <div className="gp-date-item"><span className="gp-date-label">Deadline</span><span>{new Date(app.app_deadline).toLocaleDateString()}</span></div>}
+                            {app.decision_date && <div className="gp-date-item"><span className="gp-date-label">Decision</span><span>{new Date(app.decision_date).toLocaleDateString()}</span></div>}
+                          </div>
+                        )}
+
+                        {(app.funding_type || app.stipend_amount) && (
+                          <div className="gp-school-funding">
+                            {app.funding_type && <span>{app.funding_type}</span>}
+                            {app.stipend_amount && <span className="gp-stipend">${Number(app.stipend_amount).toLocaleString()}/yr</span>}
+                          </div>
+                        )}
+
+                        {app.faculty_contact && <div className="gp-school-faculty">Faculty: {app.faculty_contact} {app.faculty_email && <a href={`mailto:${app.faculty_email}`}>&#x2709;</a>}</div>}
+                        {app.program_url && <div className="gp-school-link"><a href={app.program_url} target="_blank" rel="noopener noreferrer">Program Website &#x2197;</a></div>}
+                        {app.notes && <div className="gp-school-notes">{app.notes}</div>}
+
+                        {/* Comments from advisor */}
+                        {comments[app.id]?.length > 0 && (
+                          <div className="gp-advisor-comments">
+                            <div className="gp-section-title">Advisor Feedback</div>
+                            {comments[app.id].map(c => (
+                              <div key={c.id} className="gp-comment">
+                                <div className="gp-comment-header"><strong>{c.author_name}</strong> <span className="gp-comment-badge">{c.author_role}</span> <span className="gp-comment-date">{new Date(c.created_at).toLocaleDateString()}</span></div>
+                                <div className="gp-comment-body">{c.content}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Checklist */}
+                        <div className="gp-checklist-section">
+                          <div className="gp-section-title" style={{ cursor: 'pointer' }} onClick={() => { if (!checklists[app.id]) loadChecklist(app.id); }}>
+                            Document Checklist {checklists[app.id] ? `(${checklists[app.id].filter(i=>i.is_completed).length}/${checklists[app.id].length})` : '(click to load)'}
+                          </div>
+                          {checklists[app.id] && (
+                            <>
+                              {checklists[app.id].length === 0 ? (
+                                <button className="gp-btn-sm" onClick={() => handleGenerateChecklist(app.id)}>Generate Standard Checklist</button>
+                              ) : (
+                                <div className="gp-checklist-items">
+                                  {checklists[app.id].map(item => (
+                                    <div key={item.id} className={`gp-checklist-item ${item.is_completed ? 'completed' : ''}`}>
+                                      <input type="checkbox" checked={!!item.is_completed} onChange={() => handleToggleChecklistItem(item.id, app.id)} />
+                                      <span className="gp-checklist-name">{item.item_name}</span>
+                                      <span className="gp-checklist-type">{item.item_type}</span>
+                                      {item.recommender_name && <span className="gp-checklist-rec">({item.recommender_name} - {item.recommender_status || 'not asked'})</span>}
+                                    </div>
+                                  ))}
+                                  <button className="gp-btn-sm gp-mt-sm" onClick={() => setShowChecklistForm(app.id)}>+ Add Item</button>
+                                  {showChecklistForm === app.id && (
+                                    <div className="gp-checklist-form">
+                                      <input placeholder="Item name" value={checklistFormData.item_name} onChange={e => setChecklistFormData({...checklistFormData, item_name: e.target.value})} />
+                                      <select value={checklistFormData.item_type} onChange={e => setChecklistFormData({...checklistFormData, item_type: e.target.value})}>
+                                        <option value="sop">SOP</option><option value="cv">CV</option><option value="transcript">Transcript</option><option value="gre">GRE</option><option value="toefl">TOEFL</option><option value="writing_sample">Writing Sample</option><option value="rec_letter">Rec Letter</option><option value="fee">Fee</option><option value="other">Other</option>
+                                      </select>
+                                      <button className="gp-btn-sm gp-btn-primary" onClick={() => handleAddChecklistItem(app.id)}>Add</button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ===== TIMELINE ===== */}
+          {activePage === 'timeline' && (
+            <div className="gp-timeline-page">
+              <div className="gp-page-actions">
+                <button className="gp-btn-primary" onClick={() => {
+                  setEditingDeadlineId(null);
+                  setDeadlineFormData({ ...defaultDeadlineForm, application_id: applications.length > 0 ? String(applications[0].id) : '' });
+                  setDeadlineFormErrors({}); setShowDeadlineForm(true);
+                }}>+ Add Deadline</button>
+              </div>
+
+              {showDeadlineForm && (
+                <div className="gp-modal-overlay" onClick={() => setShowDeadlineForm(false)}>
+                  <div className="gp-modal gp-modal-sm" onClick={e => e.stopPropagation()}>
+                    <div className="gp-modal-header"><h3>{editingDeadlineId ? 'Edit Deadline' : 'Add Deadline'}</h3><button className="gp-modal-close" onClick={() => setShowDeadlineForm(false)}>&times;</button></div>
+                    <form onSubmit={handleSubmitDeadline} className="gp-modal-body">
+                      <div className="gp-form-group"><label>Application</label>
+                        <select value={deadlineFormData.application_id} onChange={e => setDeadlineFormData({...deadlineFormData, application_id: e.target.value})}>
+                          <option value="">Select...</option>
+                          {applications.map(a => <option key={a.id} value={a.id}>{a.school_name} - {a.program_name}</option>)}
+                        </select>
+                      </div>
+                      <div className="gp-form-group"><label>Title</label><input value={deadlineFormData.title} onChange={e => setDeadlineFormData({...deadlineFormData, title: e.target.value})} placeholder="e.g. Submit SOP" /></div>
+                      <div className="gp-form-row">
+                        <div className="gp-form-group"><label>Due Date</label><input type="date" value={deadlineFormData.due_date} onChange={e => setDeadlineFormData({...deadlineFormData, due_date: e.target.value})} /></div>
+                        <div className="gp-form-group"><label>Reminder</label><input type="date" value={deadlineFormData.reminder_date} onChange={e => setDeadlineFormData({...deadlineFormData, reminder_date: e.target.value})} /></div>
+                      </div>
+                      <div className="gp-form-group"><label>Notes</label><textarea value={deadlineFormData.notes} onChange={e => setDeadlineFormData({...deadlineFormData, notes: e.target.value})} rows={2}></textarea></div>
+                      <div className="gp-modal-footer"><button type="button" className="gp-btn-secondary" onClick={() => setShowDeadlineForm(false)}>Cancel</button><button type="submit" className="gp-btn-primary">{editingDeadlineId ? 'Save' : 'Add Deadline'}</button></div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {deadlines.length === 0 ? (
+                <div className="gp-card gp-empty-state"><div className="gp-empty-icon">&#x1F4C5;</div><h3>No deadlines yet</h3><p>Add deadlines to track your application milestones</p></div>
+              ) : (
+                <div className="gp-timeline">
+                  {[...deadlines].sort((a, b) => new Date(a.due_date) - new Date(b.due_date)).map(dl => {
+                    const urg = deadlineUrgency(dl.due_date, dl.is_completed);
+                    const days = Math.ceil((new Date(dl.due_date) - new Date()) / (1000*60*60*24));
+                    const app = applications.find(a => a.id === dl.application_id);
+                    return (
+                      <div key={dl.id} className={`gp-timeline-item ${urg}`}>
+                        <div className="gp-timeline-dot"></div>
+                        <div className="gp-timeline-content">
+                          <div className="gp-timeline-header">
+                            <h4 className={dl.is_completed ? 'completed' : ''}>{dl.title}</h4>
+                            <span className={`gp-deadline-badge ${urg}`}>
+                              {dl.is_completed ? 'Done' : days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Today' : `${days}d left`}
+                            </span>
+                          </div>
+                          {app && <div className="gp-timeline-school">{app.school_name} &middot; {app.program_name}</div>}
+                          <div className="gp-timeline-date">{new Date(dl.due_date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                          {dl.notes && <div className="gp-timeline-notes">{dl.notes}</div>}
+                          <div className="gp-timeline-actions">
+                            <button className="gp-btn-sm" onClick={() => handleToggleDeadline(dl.id)}>{dl.is_completed ? 'Undo' : 'Complete'}</button>
+                            <button className="gp-btn-sm" onClick={() => {
+                              setEditingDeadlineId(dl.id);
+                              setDeadlineFormData({ application_id: String(dl.application_id), title: dl.title, due_date: dl.due_date?.slice(0,10) || '', reminder_date: dl.reminder_date?.slice(0,10) || '', notes: dl.notes || '' });
+                              setShowDeadlineForm(true);
+                            }}>Edit</button>
+                            <button className="gp-btn-sm gp-btn-danger" onClick={() => handleDeleteDeadline(dl.id)}>Delete</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ===== DOCUMENTS & PEER REVIEW ===== */}
+          {activePage === 'documents' && (
+            <div className="gp-documents-page">
+              <div className="gp-page-actions">
+                <button className="gp-btn-primary" onClick={() => setShowDocForm(true)}>+ New Document</button>
+              </div>
+
+              {showDocForm && (
+                <div className="gp-modal-overlay" onClick={() => setShowDocForm(false)}>
+                  <div className="gp-modal" onClick={e => e.stopPropagation()}>
+                    <div className="gp-modal-header"><h3>New Document</h3><button className="gp-modal-close" onClick={() => setShowDocForm(false)}>&times;</button></div>
+                    <form onSubmit={handleCreateDoc} className="gp-modal-body">
+                      <div className="gp-form-row">
+                        <div className="gp-form-group"><label>Title</label><input value={docFormData.title} onChange={e => setDocFormData({...docFormData, title: e.target.value})} placeholder="e.g. MIT SOP Draft" /></div>
+                        <div className="gp-form-group"><label>Type</label>
+                          <select value={docFormData.doc_type} onChange={e => setDocFormData({...docFormData, doc_type: e.target.value})}>
+                            <option value="sop">Statement of Purpose</option><option value="cv">CV / Resume</option><option value="writing_sample">Writing Sample</option><option value="recommendation">Recommendation</option><option value="other">Other</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="gp-form-group"><label>Link to Application (optional)</label>
+                        <select value={docFormData.application_id} onChange={e => setDocFormData({...docFormData, application_id: e.target.value})}>
+                          <option value="">None</option>
+                          {applications.map(a => <option key={a.id} value={a.id}>{a.school_name} - {a.program_name}</option>)}
+                        </select>
+                      </div>
+                      <div className="gp-form-group"><label>Content</label><textarea value={docFormData.content} onChange={e => setDocFormData({...docFormData, content: e.target.value})} rows={10} placeholder="Paste or write your document here..."></textarea></div>
+                      <div className="gp-modal-footer"><button type="button" className="gp-btn-secondary" onClick={() => setShowDocForm(false)}>Cancel</button><button type="submit" className="gp-btn-primary">Create Document</button></div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* Pending reviews for me */}
+              {pendingReviews.length > 0 && (
+                <div className="gp-card gp-card-highlight gp-mb">
+                  <h3 className="gp-card-title">Documents to Review</h3>
+                  {pendingReviews.map(r => (
+                    <div key={r.id} className="gp-review-request">
+                      <div className="gp-review-info">
+                        <strong>{r.title}</strong> ({r.doc_type}) by {r.author_name}
+                        <span className={`gp-badge gp-badge-${r.status === 'completed' ? 'success' : 'warning'}`}>{r.status}</span>
+                      </div>
+                      {r.status !== 'completed' && (
+                        <div className="gp-review-actions">
+                          <button className="gp-btn-sm gp-btn-primary" onClick={() => { setActiveDoc(r.document_id); loadDocDetail(r.document_id); }}>Open & Review</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Document detail view */}
+              {activeDoc && docDetail && (
+                <div className="gp-modal-overlay" onClick={() => { setActiveDoc(null); setDocDetail(null); }}>
+                  <div className="gp-modal gp-modal-lg" onClick={e => e.stopPropagation()}>
+                    <div className="gp-modal-header">
+                      <h3>{docDetail.document.title}</h3>
+                      <button className="gp-modal-close" onClick={() => { setActiveDoc(null); setDocDetail(null); }}>&times;</button>
+                    </div>
+                    <div className="gp-modal-body gp-doc-detail">
+                      <div className="gp-doc-meta">
+                        <span className="gp-badge">{docDetail.document.doc_type}</span>
+                        <span className="gp-badge">v{docDetail.document.version}</span>
+                        <span className="gp-badge gp-badge-{docDetail.document.status === 'final' ? 'success' : 'warning'}">{docDetail.document.status}</span>
+                      </div>
+                      <div className="gp-doc-content">{docDetail.document.content}</div>
+
+                      {/* Invite reviewer */}
+                      {docDetail.document.user_id === user.id && (
+                        <div className="gp-invite-reviewer">
+                          <h4>Invite a Peer Reviewer</h4>
+                          <div className="gp-form-row">
+                            <input value={reviewerEmail} onChange={e => setReviewerEmail(e.target.value)} placeholder="Enter their email address" style={{flex:1}} />
+                            <button className="gp-btn-primary" onClick={() => handleRequestReview(activeDoc)}>Send Invite</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Reviews */}
+                      {docDetail.reviews?.length > 0 && (
+                        <div className="gp-reviews-section">
+                          <h4>Reviews ({docDetail.reviews.length})</h4>
+                          {docDetail.reviews.map(r => (
+                            <div key={r.id} className="gp-review-card">
+                              <div className="gp-review-header">
+                                <strong>{r.reviewer_name}</strong>
+                                <span className={`gp-badge gp-badge-${r.status === 'completed' ? 'success' : 'warning'}`}>{r.status}</span>
+                              </div>
+                              {r.overall_feedback && <div className="gp-review-feedback">{r.overall_feedback}</div>}
+                              {r.status !== 'completed' && r.reviewer_id === user.id && (
+                                <div className="gp-submit-review">
+                                  <textarea value={reviewFeedback} onChange={e => setReviewFeedback(e.target.value)} placeholder="Write your feedback..." rows={3}></textarea>
+                                  <button className="gp-btn-primary gp-mt-sm" onClick={() => handleSubmitReview(r.id)}>Submit Review</button>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* My documents list */}
+              <div className="gp-doc-grid">
+                {documents.length === 0 ? (
+                  <div className="gp-card gp-empty-state"><div className="gp-empty-icon">&#x1F4DD;</div><h3>No documents yet</h3><p>Create your first SOP, CV, or writing sample and invite peers to review</p></div>
+                ) : documents.map(doc => (
+                  <div key={doc.id} className="gp-doc-card" onClick={() => { setActiveDoc(doc.id); loadDocDetail(doc.id); }}>
+                    <div className="gp-doc-card-icon">{doc.doc_type === 'sop' ? '📝' : doc.doc_type === 'cv' ? '📋' : '📄'}</div>
+                    <h4>{doc.title}</h4>
+                    <div className="gp-doc-card-meta">
+                      <span className="gp-badge">{doc.doc_type}</span>
+                      <span className="gp-badge">v{doc.version}</span>
+                      {doc.review_count > 0 && <span className="gp-badge">{doc.completed_reviews}/{doc.review_count} reviews</span>}
+                    </div>
+                    {doc.school_name && <div className="gp-doc-card-school">{doc.school_name}</div>}
+                    <div className="gp-doc-card-date">Updated {new Date(doc.updated_at).toLocaleDateString()}</div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-        </>
-      ) : advisorTab === 'students' ? (
-        advisorStudents.length === 0 ? (
-          <div className="card gp-welcome-card text-center p-5">
-            <div className="py-4">
-              <i className="bi bi-people text-muted" style={{ fontSize: '3rem' }}></i>
-              <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No students yet</h4>
-              <p className="text-muted">Accept match requests from students to build your roster</p>
-            </div>
-          </div>
-        ) : (
-          <div className="row g-3">
-            {advisorStudents.map(student => (
-              <div key={student.id} className="col-md-6 col-lg-4">
-                <div
-                  className="card gp-welcome-card h-100"
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => handleSelectStudent(student)}>
-                  <div className="gp-card-accent"></div>
-                  <div className="card-body p-3">
-                    <h6 className="fw-bold mb-1" style={{ color: '#1a3c6e' }}>
-                      <i className="bi bi-person-circle me-2"></i>{student.name}
-                    </h6>
-                    <p className="text-muted small mb-2">{student.email}</p>
-                    <div className="d-flex gap-1 flex-wrap">
-                      <span className="badge bg-secondary">{student.app_count || 0} apps</span>
-                      {student.accepted_count > 0 && <span className="badge bg-success">{student.accepted_count} accepted</span>}
-                      {student.applied_count > 0 && <span className="badge bg-primary">{student.applied_count} applied</span>}
-                      {student.waitlisted_count > 0 && <span className="badge bg-warning">{student.waitlisted_count} waitlisted</span>}
-                      {student.rejected_count > 0 && <span className="badge bg-danger">{student.rejected_count} rejected</span>}
-                      {student.researching_count > 0 && <span className="badge bg-secondary">{student.researching_count} researching</span>}
-                    </div>
-                    <div className="mt-2 text-muted small">
-                      <i className="bi bi-arrow-right me-1"></i>Click to view applications
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-      ) : (
-        /* ===== MATCH REQUESTS TAB ===== */
-        matchRequests.length === 0 ? (
-          <div className="card gp-welcome-card text-center p-5">
-            <div className="py-4">
-              <i className="bi bi-inbox text-muted" style={{ fontSize: '3rem' }}></i>
-              <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No pending requests</h4>
-              <p className="text-muted">Students will appear here when they request to match with you</p>
-            </div>
-          </div>
-        ) : (
-          <div className="row g-3">
-            {matchRequests.map(req => (
-              <div key={req.id} className="col-md-6 col-lg-4">
-                <div className="card gp-welcome-card h-100">
-                  <div className="gp-card-accent"></div>
-                  <div className="card-body p-3">
-                    <h6 className="fw-bold mb-1" style={{ color: '#1a3c6e' }}>
-                      <i className="bi bi-person-circle me-2"></i>{req.student_name}
-                    </h6>
-                    <p className="text-muted small mb-3">{req.student_email}</p>
-                    <div className="d-flex gap-2">
-                      <button className="btn btn-success btn-sm" onClick={() => handleAcceptRequest(req.id)}>
-                        <i className="bi bi-check-lg me-1"></i>Accept
-                      </button>
-                      <button className="btn btn-outline-danger btn-sm" onClick={() => handleRejectRequest(req.id)}>
-                        <i className="bi bi-x-lg me-1"></i>Decline
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-      )}
-    </div>
-  );
 
-  return (
-    <>
-      <nav className="gp-navbar navbar navbar-dark py-3">
-        <div className="container">
-          <a className="navbar-brand gp-brand text-white" href="/">
-            <i className="bi bi-mortarboard-fill me-2"></i>GradPath
-          </a>
-          {user && (
-            <div className="d-flex align-items-center gap-3">
-              <span className="text-white gp-user-badge d-none d-sm-inline-flex align-items-center gap-2">
-                <i className="bi bi-person-circle"></i>{user.name}{roleBadge}
-              </span>
-              <button onClick={handleLogout} className="btn btn-outline-light btn-sm rounded-pill px-3">
-                <i className="bi bi-box-arrow-right me-1"></i>Log Out
-              </button>
+          {/* ===== CHAT ===== */}
+          {activePage === 'chat' && (
+            <div className="gp-chat-page">
+              <div className="gp-chat-sidebar">
+                <div className="gp-chat-sidebar-header">
+                  <h3>Channels</h3>
+                  <button className="gp-btn-icon" onClick={() => setShowNewChannel(true)}>+</button>
+                </div>
+                {showNewChannel && (
+                  <div className="gp-new-channel">
+                    <input value={newChannelName} onChange={e => setNewChannelName(e.target.value)} placeholder="channel-name" />
+                    <input value={newChannelDesc} onChange={e => setNewChannelDesc(e.target.value)} placeholder="Description (optional)" />
+                    <div className="gp-new-channel-actions">
+                      <button className="gp-btn-sm" onClick={() => setShowNewChannel(false)}>Cancel</button>
+                      <button className="gp-btn-sm gp-btn-primary" onClick={handleCreateChannel}>Create</button>
+                    </div>
+                  </div>
+                )}
+                {channels.map(ch => (
+                  <button key={ch.id} className={`gp-channel-item ${activeChannel === ch.id ? 'active' : ''}`} onClick={() => setActiveChannel(ch.id)}>
+                    <span className="gp-channel-hash">#</span>
+                    <span className="gp-channel-name">{ch.name}</span>
+                    {ch.message_count > 0 && <span className="gp-channel-count">{ch.message_count}</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="gp-chat-main">
+                <div className="gp-chat-header">
+                  <h3>#{channels.find(c => c.id === activeChannel)?.name || 'general'}</h3>
+                  <p>{channels.find(c => c.id === activeChannel)?.description || ''}</p>
+                </div>
+                <div className="gp-chat-messages">
+                  {messages.map(msg => (
+                    <div key={msg.id} className={`gp-message ${msg.user_id === user.id ? 'own' : ''}`}>
+                      <div className="gp-message-avatar">{msg.author_name?.charAt(0).toUpperCase()}</div>
+                      <div className="gp-message-content">
+                        <div className="gp-message-header">
+                          <span className="gp-message-author">{msg.author_name}</span>
+                          <span className="gp-message-role">{msg.author_role}</span>
+                          <span className="gp-message-time">{new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</span>
+                        </div>
+                        <div className="gp-message-text">{msg.content}</div>
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={chatEndRef}></div>
+                </div>
+                <div className="gp-chat-input">
+                  <input value={messageText} onChange={e => setMessageText(e.target.value)}
+                    placeholder={`Message #${channels.find(c => c.id === activeChannel)?.name || 'general'}...`}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} />
+                  <button className="gp-btn-primary" onClick={handleSendMessage}>Send</button>
+                </div>
+              </div>
             </div>
           )}
-        </div>
-      </nav>
 
-      <div className="gp-hero">
-        {user ? (
-          user.role === 'advisor' ? renderAdvisorDashboard() : (
-
-            /* ===== STUDENT / ADMIN DASHBOARD ===== */
-            <div className="container py-4" style={{ maxWidth: '1100px' }}>
-              <div className="d-flex justify-content-between align-items-center mb-3">
+          {/* ===== ADVISOR DASHBOARD ===== */}
+          {activePage === 'advisor' && user.role === 'advisor' && (
+            <div className="gp-advisor-page">
+              {selectedStudent ? (
                 <div>
-                  <h2 className="fw-bold mb-0 text-white">
-                    {user.role === 'admin' ? 'Admin Dashboard' : 'Your Dashboard'}
-                  </h2>
-                  <p className="text-white-50 mb-0">
-                    {user.role === 'admin'
-                      ? 'Viewing all users\' data'
-                      : 'Track and manage your graduate school journey'}
-                  </p>
+                  <button className="gp-btn-secondary gp-mb" onClick={() => { setSelectedStudent(null); setStudentApps([]); setStudentDeadlines([]); setComments({}); }}>
+                    &larr; Back to Students
+                  </button>
+                  <h2>{selectedStudent.name}'s Applications</h2>
+                  <p className="gp-text-muted">{selectedStudent.email} &middot; {studentApps.length} applications</p>
+
+                  <div className="gp-school-grid">
+                    {studentApps.map(app => (
+                      <div key={app.id} className="gp-school-card">
+                        <div className="gp-school-card-header">
+                          <div><h3 className="gp-school-name">{app.school_name}</h3><p className="gp-school-program">{app.program_name} ({app.program_type})</p></div>
+                        </div>
+                        <div className="gp-school-card-body">
+                          <div className="gp-school-badges">
+                            <span className="gp-badge" style={{ background: statusColors[app.status] + '20', color: statusColors[app.status] }}>{app.status}</span>
+                            <span className="gp-badge" style={{ background: fitColors[app.fit_level] + '20', color: fitColors[app.fit_level] }}>{app.fit_level}</span>
+                          </div>
+                          {app.notes && <div className="gp-school-notes">{app.notes}</div>}
+
+                          <div className="gp-advisor-comments">
+                            <div className="gp-section-title">Comments ({(comments[app.id] || []).length})
+                              <button className="gp-btn-sm" onClick={() => setActiveCommentApp(activeCommentApp === app.id ? null : app.id)}>
+                                {activeCommentApp === app.id ? 'Close' : 'Add'}
+                              </button>
+                            </div>
+                            {(comments[app.id] || []).map(c => (
+                              <div key={c.id} className="gp-comment">
+                                <div className="gp-comment-header"><strong>{c.author_name}</strong> <span className="gp-comment-date">{new Date(c.created_at).toLocaleDateString()}</span></div>
+                                <div className="gp-comment-body">{c.content}</div>
+                              </div>
+                            ))}
+                            {activeCommentApp === app.id && (
+                              <div className="gp-comment-form">
+                                <textarea value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="Leave feedback..." rows={2}></textarea>
+                                <button className="gp-btn-primary gp-btn-sm" onClick={() => handlePostComment(app.id)}>Post</button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                {activeTab === 'applications' ? (
-                  <button className="btn btn-light rounded-pill px-4 shadow-sm" onClick={() => showForm ? setShowForm(false) : openAddForm()}>
-                    <i className="bi bi-plus-circle me-2"></i>
-                    {showForm ? 'Cancel' : 'Add Application'}
-                  </button>
-                ) : activeTab === 'deadlines' ? (
-                  <button className="btn btn-light rounded-pill px-4 shadow-sm" onClick={() => showDeadlineForm ? setShowDeadlineForm(false) : openAddDeadline()}>
-                    <i className="bi bi-plus-circle me-2"></i>
-                    {showDeadlineForm ? 'Cancel' : 'Add Deadline'}
-                  </button>
-                ) : null}
-              </div>
-
-              {/* ===== TAB NAVIGATION ===== */}
-              <ul className="nav nav-pills mb-4">
-                <li className="nav-item">
-                  <button className={`nav-link ${activeTab === 'applications' ? 'active' : 'text-white'}`}
-                    style={activeTab === 'applications' ? { backgroundColor: '#fff', color: '#1a3c6e' } : {}}
-                    onClick={() => { setActiveTab('applications'); setShowDeadlineForm(false); }}>
-                    <i className="bi bi-mortarboard me-1"></i>Applications
-                    <span className="badge bg-secondary ms-2">{applications.length}</span>
-                  </button>
-                </li>
-                <li className="nav-item ms-2">
-                  <button className={`nav-link ${activeTab === 'deadlines' ? 'active' : 'text-white'}`}
-                    style={activeTab === 'deadlines' ? { backgroundColor: '#fff', color: '#1a3c6e' } : {}}
-                    onClick={() => { setActiveTab('deadlines'); setShowForm(false); }}>
-                    <i className="bi bi-alarm me-1"></i>Deadlines
-                    <span className="badge bg-secondary ms-2">{deadlines.filter(d => !d.is_completed).length}</span>
-                  </button>
-                </li>
-                {user.role === 'student' && (
-                  <li className="nav-item ms-2">
-                    <button className={`nav-link ${activeTab === 'advisor' ? 'active' : 'text-white'}`}
-                      style={activeTab === 'advisor' ? { backgroundColor: '#fff', color: '#1a3c6e' } : {}}
-                      onClick={() => { setActiveTab('advisor'); setShowForm(false); setShowDeadlineForm(false); }}>
-                      <i className="bi bi-person-check me-1"></i>Find Advisor
-                    </button>
-                  </li>
-                )}
-                {user.role === 'admin' && (
-                  <li className="nav-item ms-2">
-                    <button className={`nav-link ${activeTab === 'users' ? 'active' : 'text-white'}`}
-                      style={activeTab === 'users' ? { backgroundColor: '#fff', color: '#1a3c6e' } : {}}
-                      onClick={() => { setActiveTab('users'); setShowForm(false); setShowDeadlineForm(false); }}>
-                      <i className="bi bi-people me-1"></i>Manage Users
-                    </button>
-                  </li>
-                )}
-              </ul>
-
-              {/* ===== APPLICATIONS TAB ===== */}
-              {activeTab === 'applications' && (<>
-
-                {showForm && (
-                  <div className="card gp-welcome-card mb-4">
-                    <div className="gp-card-accent"></div>
-                    <div className="card-body p-4">
-                      <h5 className="fw-bold mb-3" style={{ color: '#1a3c6e' }}>
-                        <i className={`bi ${editingId ? 'bi-pencil-square' : 'bi-plus-square'} me-2`}></i>
-                        {editingId ? 'Edit Application' : 'New Application'}
-                      </h5>
-                      <form onSubmit={handleSubmitApplication}>
-                        <div className="row g-3">
-                          <div className="col-md-6">
-                            <label className="form-label fw-semibold">School Name *</label>
-                            <input type="text" className={`form-control gp-form-control ${formErrors.school_name ? 'is-invalid' : ''}`}
-                              value={formData.school_name}
-                              onChange={(e) => setFormData({ ...formData, school_name: e.target.value })}
-                              placeholder="Harvard University" />
-                            {fieldErr(formErrors, 'school_name')}
-                          </div>
-                          <div className="col-md-6">
-                            <label className="form-label fw-semibold">Program Name *</label>
-                            <input type="text" className={`form-control gp-form-control ${formErrors.program_name ? 'is-invalid' : ''}`}
-                              value={formData.program_name}
-                              onChange={(e) => setFormData({ ...formData, program_name: e.target.value })}
-                              placeholder="Computer Science" />
-                            {fieldErr(formErrors, 'program_name')}
-                          </div>
-                          <div className="col-md-4">
-                            <label className="form-label fw-semibold">Degree Type</label>
-                            <select className={`form-select gp-form-control ${formErrors.program_type ? 'is-invalid' : ''}`}
-                              value={formData.program_type}
-                              onChange={(e) => setFormData({ ...formData, program_type: e.target.value })}>
-                              <option value="MS">MS</option>
-                              <option value="PhD">PhD</option>
-                              <option value="MBA">MBA</option>
-                              <option value="Other">Other</option>
-                            </select>
-                            {fieldErr(formErrors, 'program_type')}
-                          </div>
-                          <div className="col-md-4">
-                            <label className="form-label fw-semibold">Fit Level</label>
-                            <select className={`form-select gp-form-control ${formErrors.fit_level ? 'is-invalid' : ''}`}
-                              value={formData.fit_level}
-                              onChange={(e) => setFormData({ ...formData, fit_level: e.target.value })}>
-                              <option value="Safety">Safety</option>
-                              <option value="Match">Match</option>
-                              <option value="Reach">Reach</option>
-                            </select>
-                            {fieldErr(formErrors, 'fit_level')}
-                          </div>
-                          {editingId && (
-                            <div className="col-md-4">
-                              <label className="form-label fw-semibold">Status</label>
-                              <select className={`form-select gp-form-control ${formErrors.status ? 'is-invalid' : ''}`}
-                                value={formData.status}
-                                onChange={(e) => setFormData({ ...formData, status: e.target.value })}>
-                                <option value="Researching">Researching</option>
-                                <option value="Applied">Applied</option>
-                                <option value="Accepted">Accepted</option>
-                                <option value="Rejected">Rejected</option>
-                                <option value="Waitlisted">Waitlisted</option>
-                              </select>
-                              {fieldErr(formErrors, 'status')}
-                            </div>
-                          )}
-                          <div className={editingId ? 'col-md-6' : 'col-md-4'}>
-                            <label className="form-label fw-semibold">Application Deadline</label>
-                            <input type="date" className={`form-control gp-form-control ${formErrors.app_deadline ? 'is-invalid' : ''}`}
-                              value={formData.app_deadline}
-                              onChange={(e) => setFormData({ ...formData, app_deadline: e.target.value })} />
-                            {fieldErr(formErrors, 'app_deadline')}
-                          </div>
-                          <div className={editingId ? 'col-md-6' : 'col-md-4'}>
-                            <label className="form-label fw-semibold">Decision Date</label>
-                            <input type="date" className={`form-control gp-form-control ${formErrors.decision_date ? 'is-invalid' : ''}`}
-                              value={formData.decision_date}
-                              onChange={(e) => setFormData({ ...formData, decision_date: e.target.value })} />
-                            {fieldErr(formErrors, 'decision_date')}
-                          </div>
-                          <div className="col-12">
-                            <label className="form-label fw-semibold">Notes</label>
-                            <textarea className="form-control gp-form-control" rows="2"
-                              value={formData.notes}
-                              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                              placeholder="GRE required, letters of rec due by..."></textarea>
-                          </div>
-                          <div className="col-12">
-                            <button type="submit" className="btn btn-primary gp-btn-login text-white">
-                              <i className={`bi ${editingId ? 'bi-save' : 'bi-check-circle'} me-2`}></i>
-                              {editingId ? 'Save Changes' : 'Save Application'}
-                            </button>
-                            {editingId && (
-                              <button type="button" className="btn btn-outline-secondary ms-2 rounded-pill"
-                                onClick={() => { setShowForm(false); setEditingId(null); setFormData(defaultForm); }}>
-                                Cancel Edit
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-                )}
-
-                {applications.length === 0 ? (
-                  <div className="card gp-welcome-card text-center p-5">
-                    <div className="py-4">
-                      <i className="bi bi-inbox text-muted" style={{ fontSize: '3rem' }}></i>
-                      <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No applications yet</h4>
-                      <p className="text-muted">Click "Add Application" to get started</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="row g-3">
-                    {applications.map(app => (
-                      <div key={app.id} className="col-md-6 col-lg-4">
-                        <div className="card gp-welcome-card h-100">
-                          <div className="gp-card-accent"></div>
-                          <div className="card-body p-3">
-                            <div className="d-flex justify-content-between align-items-start mb-2">
-                              <div>
-                                <h6 className="fw-bold mb-1" style={{ color: '#1a3c6e' }}>{app.school_name}</h6>
-                                <p className="text-muted small mb-1">{app.program_name} ({app.program_type})</p>
-                              </div>
-                              <div className="d-flex gap-1">
-                                <button className="btn btn-sm btn-link text-primary p-0 me-2" onClick={() => openEditForm(app)}
-                                  title="Edit">
-                                  <i className="bi bi-pencil"></i>
-                                </button>
-                                <button className="btn btn-sm btn-link text-danger p-0" onClick={() => handleDelete(app.id)}
-                                  title="Delete">
-                                  <i className="bi bi-trash"></i>
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="d-flex gap-2 mb-2">
-                              <span className={statusBadge(app.status)}>{app.status}</span>
-                              <span className={fitBadge(app.fit_level)}>{app.fit_level}</span>
-                            </div>
-
-                            {user.role === 'admin' && app.user_name && (
-                              <p className="small mb-1">
-                                <i className="bi bi-person me-1 text-muted"></i>
-                                <span className="text-muted">{app.user_name} ({app.user_email})</span>
-                              </p>
-                            )}
-
-                            {app.app_deadline && (
-                              <p className="small text-muted mb-1">
-                                <i className="bi bi-calendar-event me-1"></i>
-                                Deadline: {new Date(app.app_deadline).toLocaleDateString()}
-                              </p>
-                            )}
-                            {app.decision_date && (
-                              <p className="small text-muted mb-1">
-                                <i className="bi bi-calendar-check me-1"></i>
-                                Decision: {new Date(app.decision_date).toLocaleDateString()}
-                              </p>
-                            )}
-                            {app.notes && (
-                              <p className="small text-muted mb-2 fst-italic">"{app.notes}"</p>
-                            )}
-
-                            <label className="small text-muted mb-1">Update Status:</label>
-                            <select className="form-select form-select-sm" value={app.status}
-                              onChange={(e) => handleStatusChange(app.id, e.target.value)}>
-                              <option value="Researching">Researching</option>
-                              <option value="Applied">Applied</option>
-                              <option value="Accepted">Accepted</option>
-                              <option value="Rejected">Rejected</option>
-                              <option value="Waitlisted">Waitlisted</option>
-                            </select>
-
-                            {/* Advisor Feedback */}
-                            {commentsMap[app.id] && commentsMap[app.id].length > 0 && (
-                              <div className="mt-2 pt-2 border-top">
-                                <small className="fw-semibold text-muted">
-                                  <i className="bi bi-chat-quote me-1"></i>Advisor Feedback
-                                </small>
-                                {commentsMap[app.id].map(c => (
-                                  <div key={c.id} className="small p-2 mt-1 bg-light rounded">
-                                    <div className="text-muted">{c.author_name} · {new Date(c.created_at).toLocaleDateString()}</div>
-                                    <div>{c.content}</div>
-                                    {user.role === 'admin' && (
-                                      <button
-                                        className="btn btn-sm btn-link text-danger p-0 mt-1"
-                                        style={{ fontSize: '0.7rem' }}
-                                        onClick={() => handleDeleteComment(c.id, app.id)}>
-                                        Delete
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* Admin comment posting */}
-                            {user.role === 'admin' && (
-                              <div className="mt-2">
-                                {commentingOnApp === app.id ? (
-                                  <div className="d-flex gap-2 mt-1">
-                                    <input
-                                      type="text"
-                                      className="form-control form-control-sm"
-                                      placeholder="Add feedback..."
-                                      value={newCommentText}
-                                      onChange={e => setNewCommentText(e.target.value)}
-                                      onKeyDown={e => e.key === 'Enter' && handlePostComment(app.id)}
-                                    />
-                                    <button className="btn btn-primary btn-sm" onClick={() => handlePostComment(app.id)}>Post</button>
-                                    <button className="btn btn-outline-secondary btn-sm" onClick={() => { setCommentingOnApp(null); setNewCommentText(''); }}>✕</button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    className="btn btn-sm btn-outline-secondary mt-1"
-                                    style={{ fontSize: '0.75rem' }}
-                                    onClick={() => { setCommentingOnApp(app.id); setNewCommentText(''); }}>
-                                    <i className="bi bi-chat me-1"></i>Add Comment
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-              </>)}
-
-              {/* ===== DEADLINES TAB ===== */}
-              {activeTab === 'deadlines' && (<>
-
-                {showDeadlineForm && (
-                  <div className="card gp-welcome-card mb-4">
-                    <div className="gp-card-accent"></div>
-                    <div className="card-body p-4">
-                      <h5 className="fw-bold mb-3" style={{ color: '#1a3c6e' }}>
-                        <i className={`bi ${editingDeadlineId ? 'bi-pencil-square' : 'bi-alarm'} me-2`}></i>
-                        {editingDeadlineId ? 'Edit Deadline' : 'New Deadline'}
-                      </h5>
-                      <form onSubmit={handleSubmitDeadline}>
-                        <div className="row g-3">
-                          <div className="col-md-6">
-                            <label className="form-label fw-semibold">Application *</label>
-                            <select className={`form-select gp-form-control ${deadlineFormErrors.application_id ? 'is-invalid' : ''}`}
-                              value={deadlineFormData.application_id}
-                              onChange={(e) => setDeadlineFormData({ ...deadlineFormData, application_id: e.target.value })}>
-                              <option value="">Select an application...</option>
-                              {applications.map(app => (
-                                <option key={app.id} value={app.id}>{app.school_name} — {app.program_name}</option>
-                              ))}
-                            </select>
-                            {fieldErr(deadlineFormErrors, 'application_id')}
-                          </div>
-                          <div className="col-md-6">
-                            <label className="form-label fw-semibold">Title *</label>
-                            <input type="text" className={`form-control gp-form-control ${deadlineFormErrors.title ? 'is-invalid' : ''}`}
-                              value={deadlineFormData.title}
-                              onChange={(e) => setDeadlineFormData({ ...deadlineFormData, title: e.target.value })}
-                              placeholder="Submit transcript, Write SOP..." />
-                            {fieldErr(deadlineFormErrors, 'title')}
-                          </div>
-                          <div className="col-md-4">
-                            <label className="form-label fw-semibold">Due Date *</label>
-                            <input type="date" className={`form-control gp-form-control ${deadlineFormErrors.due_date ? 'is-invalid' : ''}`}
-                              value={deadlineFormData.due_date}
-                              onChange={(e) => setDeadlineFormData({ ...deadlineFormData, due_date: e.target.value })} />
-                            {fieldErr(deadlineFormErrors, 'due_date')}
-                          </div>
-                          <div className="col-md-4">
-                            <label className="form-label fw-semibold">Reminder Date</label>
-                            <input type="date" className="form-control gp-form-control"
-                              value={deadlineFormData.reminder_date}
-                              onChange={(e) => setDeadlineFormData({ ...deadlineFormData, reminder_date: e.target.value })} />
-                          </div>
-                          <div className="col-md-4">
-                            <label className="form-label fw-semibold">Notes</label>
-                            <input type="text" className="form-control gp-form-control"
-                              value={deadlineFormData.notes}
-                              onChange={(e) => setDeadlineFormData({ ...deadlineFormData, notes: e.target.value })}
-                              placeholder="Optional notes..." />
-                          </div>
-                          <div className="col-12">
-                            <button type="submit" className="btn btn-primary gp-btn-login text-white">
-                              <i className={`bi ${editingDeadlineId ? 'bi-save' : 'bi-check-circle'} me-2`}></i>
-                              {editingDeadlineId ? 'Save Changes' : 'Save Deadline'}
-                            </button>
-                            {editingDeadlineId && (
-                              <button type="button" className="btn btn-outline-secondary ms-2 rounded-pill"
-                                onClick={() => { setShowDeadlineForm(false); setEditingDeadlineId(null); setDeadlineFormData(defaultDeadlineForm); }}>
-                                Cancel Edit
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-                )}
-
-                {deadlines.length === 0 ? (
-                  <div className="card gp-welcome-card text-center p-5">
-                    <div className="py-4">
-                      <i className="bi bi-alarm text-muted" style={{ fontSize: '3rem' }}></i>
-                      <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No deadlines yet</h4>
-                      <p className="text-muted">Add a deadline to stay on top of your applications</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="row g-3">
-                    {deadlines.map(dl => (
-                      <div key={dl.id} className="col-md-6 col-lg-4">
-                        <div className={`card gp-welcome-card h-100 ${dl.is_completed ? 'opacity-75' : ''}`}>
-                          <div className="gp-card-accent" style={
-                            dl.is_completed ? { background: '#28a745' }
-                              : deadlineUrgency(dl.due_date, dl.is_completed) === 'danger' ? { background: '#dc3545' }
-                                : deadlineUrgency(dl.due_date, dl.is_completed) === 'warning' ? { background: '#ffc107' }
-                                  : {}
-                          }></div>
-                          <div className="card-body p-3">
-                            <div className="d-flex justify-content-between align-items-start mb-2">
-                              <div className="d-flex align-items-start gap-2">
-                                <input type="checkbox" className="form-check-input mt-1" style={{ cursor: 'pointer' }}
-                                  checked={!!dl.is_completed}
-                                  onChange={() => handleToggleDeadline(dl.id)} />
-                                <div>
-                                  <h6 className={`fw-bold mb-1 ${dl.is_completed ? 'text-decoration-line-through text-muted' : ''}`} style={dl.is_completed ? {} : { color: '#1a3c6e' }}>
-                                    {dl.title}
-                                  </h6>
-                                  <p className="text-muted small mb-0">
-                                    <i className="bi bi-building me-1"></i>{dl.school_name} — {dl.program_name}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="d-flex gap-1">
-                                <button className="btn btn-sm btn-link text-primary p-0 me-2" onClick={() => openEditDeadline(dl)} title="Edit">
-                                  <i className="bi bi-pencil"></i>
-                                </button>
-                                <button className="btn btn-sm btn-link text-danger p-0" onClick={() => handleDeleteDeadline(dl.id)} title="Delete">
-                                  <i className="bi bi-trash"></i>
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="d-flex gap-2 mb-2">
-                              <span className={`badge bg-${deadlineUrgency(dl.due_date, dl.is_completed)}`}>
-                                {dl.is_completed ? 'Completed' : (() => {
-                                  const days = Math.ceil((new Date(dl.due_date) - new Date()) / (1000 * 60 * 60 * 24));
-                                  if (days < 0) return `${Math.abs(days)}d overdue`;
-                                  if (days === 0) return 'Due today';
-                                  if (days === 1) return 'Due tomorrow';
-                                  return `${days}d left`;
-                                })()}
-                              </span>
-                            </div>
-
-                            <p className="small text-muted mb-1">
-                              <i className="bi bi-calendar-event me-1"></i>
-                              Due: {new Date(dl.due_date).toLocaleDateString()}
-                            </p>
-                            {dl.reminder_date && (
-                              <p className="small text-muted mb-1">
-                                <i className="bi bi-bell me-1"></i>
-                                Reminder: {new Date(dl.reminder_date).toLocaleDateString()}
-                              </p>
-                            )}
-                            {dl.notes && (
-                              <p className="small text-muted mb-0 fst-italic">"{dl.notes}"</p>
-                            )}
-                            {user.role === 'admin' && dl.user_name && (
-                              <p className="small mb-0 mt-1">
-                                <i className="bi bi-person me-1 text-muted"></i>
-                                <span className="text-muted">{dl.user_name}</span>
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-              </>)}
-
-              {/* ===== FIND ADVISOR TAB (students only) ===== */}
-              {activeTab === 'advisor' && user.role === 'student' && (() => {
-                const currentMatch = matchRequests.find(r => r.status === 'accepted');
-                const isMatched = !!currentMatch;
-                const filtered = advisorList.filter(a =>
-                  a.name.toLowerCase().includes(advisorSearch.toLowerCase()) ||
-                  a.email.toLowerCase().includes(advisorSearch.toLowerCase())
-                );
-                return (
-                  <div>
-                    {currentMatch && (
-                      <div className="card gp-welcome-card mb-4">
-                        <div className="card-body p-3 d-flex align-items-center gap-3">
-                          <i className="bi bi-check-circle-fill text-success" style={{ fontSize: '1.5rem' }}></i>
-                          <div>
-                            <p className="mb-0 fw-semibold" style={{ color: '#1a3c6e' }}>
-                              Matched with <strong>{currentMatch.advisor_name}</strong>
-                            </p>
-                            <p className="mb-0 text-muted small">{currentMatch.advisor_email}</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="mb-3">
-                      <div className="input-group">
-                        <span className="input-group-text gp-input-icon"><i className="bi bi-search"></i></span>
-                        <input type="text" className="form-control gp-form-control"
-                          placeholder="Search advisors by name or email..."
-                          value={advisorSearch}
-                          onChange={e => setAdvisorSearch(e.target.value)} />
-                      </div>
-                    </div>
-
-                    {advisorList.length === 0 ? (
-                      <div className="card gp-welcome-card text-center p-5">
-                        <div className="py-4">
-                          <i className="bi bi-person-x text-muted" style={{ fontSize: '3rem' }}></i>
-                          <h4 className="mt-3" style={{ color: '#1a3c6e' }}>No advisors available</h4>
-                          <p className="text-muted">No advisors have signed up yet</p>
-                        </div>
-                      </div>
-                    ) : filtered.length === 0 ? (
-                      <p className="text-white-50">No advisors match your search.</p>
-                    ) : (
-                      <div className="row g-3">
-                        {filtered.map(advisor => {
-                          const myRequest = matchRequests.find(r => r.advisor_id === advisor.id);
-                          return (
-                            <div key={advisor.id} className="col-md-6 col-lg-4">
-                              <div className="card gp-welcome-card h-100">
-                                <div className="gp-card-accent"></div>
-                                <div className="card-body p-3">
-                                  <h6 className="fw-bold mb-1" style={{ color: '#1a3c6e' }}>
-                                    <i className="bi bi-person-circle me-2"></i>{advisor.name}
-                                  </h6>
-                                  <p className="text-muted small mb-3">{advisor.email}</p>
-                                  {!myRequest && !isMatched && (
-                                    <button className="btn btn-primary btn-sm" onClick={() => handleSendMatchRequest(advisor.id)}>
-                                      <i className="bi bi-person-plus me-1"></i>Request Match
-                                    </button>
-                                  )}
-                                  {!myRequest && isMatched && (
-                                    <span className="text-muted small">Already matched with another advisor</span>
-                                  )}
-                                  {myRequest?.status === 'pending' && (
-                                    <div className="d-flex gap-2 align-items-center flex-wrap">
-                                      <span className="badge bg-warning">Request Sent</span>
-                                      <button className="btn btn-outline-secondary btn-sm" onClick={() => handleWithdrawRequest(myRequest.id)}>
-                                        Withdraw
-                                      </button>
-                                    </div>
-                                  )}
-                                  {myRequest?.status === 'accepted' && (
-                                    <span className="badge bg-success"><i className="bi bi-check-lg me-1"></i>Matched</span>
-                                  )}
-                                  {myRequest?.status === 'rejected' && (
-                                    <div className="d-flex gap-2 align-items-center flex-wrap">
-                                      <span className="badge bg-danger">Not Available</span>
-                                      {!isMatched && (
-                                        <button className="btn btn-outline-primary btn-sm" onClick={() => handleSendMatchRequest(advisor.id)}>
-                                          Try Again
-                                        </button>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* ===== MANAGE USERS TAB (admin only) ===== */}
-              {activeTab === 'users' && user.role === 'admin' && (
+              ) : (
                 <div>
-                  {/* Add User button + inline form */}
-                  <div className="mb-3 d-flex justify-content-end">
-                    <button className="btn btn-primary btn-sm" onClick={() => { setShowAddUserForm(v => !v); setAddUserError(''); }}>
-                      <i className={`bi ${showAddUserForm ? 'bi-x' : 'bi-person-plus'} me-1`}></i>
-                      {showAddUserForm ? 'Cancel' : 'Add User'}
-                    </button>
-                  </div>
-                  {showAddUserForm && (
-                    <div className="card gp-welcome-card mb-3">
-                      <div className="gp-card-accent"></div>
-                      <div className="card-body">
-                        <h6 className="fw-bold mb-3" style={{ color: '#1a3c6e' }}>Add New User</h6>
-                        <form onSubmit={handleAddUser}>
-                          <div className="row g-2">
-                            <div className="col-md-3">
-                              <input className="form-control form-control-sm" placeholder="Full name" value={addUserData.name}
-                                onChange={e => setAddUserData(d => ({ ...d, name: e.target.value }))} required />
-                            </div>
-                            <div className="col-md-3">
-                              <input type="email" className="form-control form-control-sm" placeholder="Email" value={addUserData.email}
-                                onChange={e => setAddUserData(d => ({ ...d, email: e.target.value }))} required />
-                            </div>
-                            <div className="col-md-2">
-                              <input type="password" className="form-control form-control-sm" placeholder="Password" value={addUserData.password}
-                                onChange={e => setAddUserData(d => ({ ...d, password: e.target.value }))} required />
-                            </div>
-                            <div className="col-md-2">
-                              <select className="form-select form-select-sm" value={addUserData.role}
-                                onChange={e => setAddUserData(d => ({ ...d, role: e.target.value }))}>
-                                <option value="student">Student</option>
-                                <option value="advisor">Advisor</option>
-                              </select>
-                            </div>
-                            <div className="col-md-2">
-                              <button type="submit" className="btn btn-success btn-sm w-100">Create</button>
+                  <h2>Your Students</h2>
+                  {advisorStudents.length === 0 ? (
+                    <div className="gp-card gp-empty-state"><div className="gp-empty-icon">&#x1F465;</div><h3>No students assigned yet</h3></div>
+                  ) : (
+                    <div className="gp-school-grid">
+                      {advisorStudents.map(s => (
+                        <div key={s.id} className="gp-school-card" style={{cursor:'pointer'}} onClick={() => viewStudent(s.id)}>
+                          <div className="gp-school-card-header">
+                            <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+                              <div className="gp-avatar-lg">{s.name?.charAt(0).toUpperCase()}</div>
+                              <div><h3 className="gp-school-name">{s.name}</h3><p className="gp-school-program">{s.email}</p></div>
                             </div>
                           </div>
-                          {addUserError && <div className="alert alert-danger py-1 mt-2 small">{addUserError}</div>}
-                        </form>
-                      </div>
-                    </div>
-                  )}
-                  {allUsers.length === 0 ? (
-                    <div className="card gp-welcome-card text-center p-5">
-                      <p className="text-muted">No users found</p>
-                    </div>
-                  ) : (
-                    <div className="card gp-welcome-card">
-                      <div className="gp-card-accent"></div>
-                      <div className="card-body p-0">
-                        <div className="table-responsive">
-                          <table className="table table-hover mb-0">
-                            <thead>
-                              <tr style={{ color: '#1a3c6e' }}>
-                                <th className="ps-3">Name</th>
-                                <th>Email</th>
-                                <th>Role</th>
-                                <th>Apps</th>
-                                <th>Assign Advisor</th>
-                                <th></th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {allUsers.map(u => (
-                                <tr key={u.id}>
-                                  <td className="ps-3 fw-semibold">{u.name}</td>
-                                  <td className="text-muted small">{u.email}</td>
-                                  <td>
-                                    <span className={`badge bg-${u.role === 'admin' ? 'danger' : u.role === 'advisor' ? 'warning' : 'info'}`}>
-                                      {u.role}
-                                    </span>
-                                  </td>
-                                  <td className="text-muted">{u.app_count || 0}</td>
-                                  <td>
-                                    {u.role === 'student' ? (
-                                      <select
-                                        className="form-select form-select-sm"
-                                        style={{ width: 'auto', minWidth: '160px' }}
-                                        value={u.advisor_id || ''}
-                                        onChange={e => handleAssignAdvisor(u.id, e.target.value || null)}>
-                                        <option value="">No advisor</option>
-                                        {allUsers.filter(a => a.role === 'advisor').map(adv => (
-                                          <option key={adv.id} value={adv.id}>{adv.name}</option>
-                                        ))}
-                                      </select>
-                                    ) : (
-                                      <span className="text-muted small">—</span>
-                                    )}
-                                  </td>
-                                  <td>
-                                    {u.role !== 'admin' && (
-                                      <button className="btn btn-outline-danger btn-sm" onClick={() => handleDeleteUser(u.id)}>
-                                        <i className="bi bi-trash"></i>
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                          <div className="gp-school-card-body">
+                            <div className="gp-school-badges">
+                              <span className="gp-badge">{s.total_apps} apps</span>
+                              {s.accepted_count > 0 && <span className="gp-badge gp-badge-success">{s.accepted_count} accepted</span>}
+                              {s.applied_count > 0 && <span className="gp-badge" style={{background:'#3b82f620',color:'#3b82f6'}}>{s.applied_count} applied</span>}
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
                   )}
                 </div>
               )}
             </div>
-          )
-        ) : page === 'signup' ? (
+          )}
 
-          /* ===== SIGN UP ===== */
-          <div>
-            <div className="gp-login-card card">
-              <div className="gp-card-accent"></div>
-              <div className="card-body p-4 p-md-5">
-                <div className="text-center mb-4">
-                  <div className="gp-icon-circle mb-3">
-                    <i className="bi bi-person-plus-fill text-white" style={{ fontSize: '1.8rem' }}></i>
-                  </div>
-                  <h3 className="fw-bold" style={{ color: '#1a3c6e' }}>Create Account</h3>
-                  <p className="text-muted mb-0">Start tracking your grad school applications</p>
-                </div>
-                <form onSubmit={handleSignUp}>
-                  <div className="mb-3">
-                    <label className="form-label fw-semibold text-dark">Full Name</label>
-                    <div className="input-group">
-                      <span className="gp-input-icon input-group-text"><i className="bi bi-person"></i></span>
-                      <input type="text" className={`form-control gp-form-control with-icon ${fieldErrors.name ? 'is-invalid' : ''}`}
-                        value={name} onChange={(e) => setName(e.target.value)} placeholder="John Doe" />
-                    </div>
-                    {fieldErr(fieldErrors, 'name')}
-                  </div>
-                  <div className="mb-3">
-                    <label className="form-label fw-semibold text-dark">Email Address</label>
-                    <div className="input-group">
-                      <span className="gp-input-icon input-group-text"><i className="bi bi-envelope"></i></span>
-                      <input type="email" className={`form-control gp-form-control with-icon ${fieldErrors.email ? 'is-invalid' : ''}`}
-                        value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@kenyon.edu" />
-                    </div>
-                    {fieldErr(fieldErrors, 'email')}
-                  </div>
-                  <div className="mb-4">
-                    <label className="form-label fw-semibold text-dark">Password</label>
-                    <div className="input-group">
-                      <span className="gp-input-icon input-group-text"><i className="bi bi-lock"></i></span>
-                      <input type={showPassword ? 'text' : 'password'} className={`form-control gp-form-control with-icon ${fieldErrors.password ? 'is-invalid' : ''}`}
-                        value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" minLength={4} />
-                      <button type="button" className="input-group-text gp-input-icon"
-                        style={{ borderLeft: 'none', borderRight: '2px solid #e2e8f0', borderRadius: '0 10px 10px 0', cursor: 'pointer' }}
-                        onClick={() => setShowPassword(!showPassword)}>
-                        <i className={`bi ${showPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
-                      </button>
-                    </div>
-                    {fieldErr(fieldErrors, 'password')}
-                  </div>
-                  <div className="mb-4">
-                    <label className="form-label fw-semibold text-dark">Role</label>
-                    <select className="form-select gp-form-control" value={signupRole} onChange={(e) => setSignupRole(e.target.value)}>
-                      <option value="student">Student</option>
-                      <option value="advisor">Advisor</option>
-                    </select>
-                  </div>
-                  {error && <div className="alert alert-danger py-2 rounded-3"><i className="bi bi-exclamation-circle me-2"></i>{error}</div>}
-                  <button type="submit" className="btn btn-primary gp-btn-login w-100 text-white">
-                    <i className="bi bi-person-check me-2"></i>Create Account
-                  </button>
-                </form>
-                <div className="text-center mt-4 pt-3" style={{ borderTop: '1px solid #e2e8f0' }}>
-                  <p className="text-muted mb-0" style={{ fontSize: '0.9rem' }}>
-                    Already have an account?{' '}
-                    <a href="#" onClick={(e) => { e.preventDefault(); switchPage('signin'); }} className="fw-semibold text-decoration-none" style={{ color: '#2e86c1' }}>Sign In</a>
-                  </p>
-                </div>
+          {/* ===== ADMIN ===== */}
+          {activePage === 'admin' && user.role === 'admin' && (
+            <div className="gp-admin-page">
+              <h2>User Management</h2>
+              <div className="gp-admin-table-wrap">
+                <table className="gp-admin-table">
+                  <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Advisor</th></tr></thead>
+                  <tbody>
+                    {adminUsers.map(u => (
+                      <tr key={u.id}>
+                        <td>{u.name}</td>
+                        <td>{u.email}</td>
+                        <td><span className="gp-badge">{u.role}</span></td>
+                        <td>
+                          {u.role === 'student' && (
+                            <select value={u.advisor_id || ''} onChange={e => handleAssignAdvisor(u.id, e.target.value)}>
+                              <option value="">None</option>
+                              {allAdvisors.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                            </select>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
-          </div>
+          )}
 
-        ) : (
-
-          /* ===== SIGN IN ===== */
-          <div>
-            <div className="gp-login-card card">
-              <div className="gp-card-accent"></div>
-              <div className="card-body p-4 p-md-5">
-                <div className="text-center mb-4">
-                  <div className="gp-icon-circle mb-3">
-                    <i className="bi bi-mortarboard-fill text-white" style={{ fontSize: '1.8rem' }}></i>
-                  </div>
-                  <h3 className="fw-bold" style={{ color: '#1a3c6e' }}>Welcome Back</h3>
-                  <p className="text-muted mb-0">Sign in to continue your journey</p>
-                </div>
-                <form onSubmit={handleSignIn}>
-                  <div className="mb-3">
-                    <label className="form-label fw-semibold text-dark">Email Address</label>
-                    <div className="input-group">
-                      <span className="gp-input-icon input-group-text"><i className="bi bi-envelope"></i></span>
-                      <input type="email" className={`form-control gp-form-control with-icon ${fieldErrors.email ? 'is-invalid' : ''}`}
-                        value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@kenyon.edu" />
-                    </div>
-                    {fieldErr(fieldErrors, 'email')}
-                  </div>
-                  <div className="mb-4">
-                    <label className="form-label fw-semibold text-dark">Password</label>
-                    <div className="input-group">
-                      <span className="gp-input-icon input-group-text"><i className="bi bi-lock"></i></span>
-                      <input type={showPassword ? 'text' : 'password'} className={`form-control gp-form-control with-icon ${fieldErrors.password ? 'is-invalid' : ''}`}
-                        value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" />
-                      <button type="button" className="input-group-text gp-input-icon"
-                        style={{ borderLeft: 'none', borderRight: '2px solid #e2e8f0', borderRadius: '0 10px 10px 0', cursor: 'pointer' }}
-                        onClick={() => setShowPassword(!showPassword)}>
-                        <i className={`bi ${showPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
-                      </button>
-                    </div>
-                    {fieldErr(fieldErrors, 'password')}
-                  </div>
-                  {error && <div className="alert alert-danger py-2 rounded-3"><i className="bi bi-exclamation-circle me-2"></i>{error}</div>}
-                  <button type="submit" className="btn btn-primary gp-btn-login w-100 text-white">
-                    <i className="bi bi-arrow-right-circle me-2"></i>Sign In
-                  </button>
-                </form>
-                <div className="text-center mt-4 pt-3" style={{ borderTop: '1px solid #e2e8f0' }}>
-                  <p className="text-muted mb-0" style={{ fontSize: '0.9rem' }}>
-                    Don't have an account?{' '}
-                    <a href="#" onClick={(e) => { e.preventDefault(); switchPage('signup'); }} className="fw-semibold text-decoration-none" style={{ color: '#2e86c1' }}>Sign Up</a>
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <footer className="gp-footer">
-        GradPath &copy; 2026 &middot; Kenyon College
-      </footer>
-    </>
+        </div>
+      </main>
+    </div>
   );
 }
 
