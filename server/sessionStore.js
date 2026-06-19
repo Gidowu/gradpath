@@ -25,7 +25,7 @@ class MySQLSessionStore extends session.Store {
 
   set(sid, sessionData, callback) {
     const data = JSON.stringify(sessionData);
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
     this.pool.query(
       'INSERT INTO gradpath_sessions (sid, data, expiresAt) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE data = ?, expiresAt = ?',
