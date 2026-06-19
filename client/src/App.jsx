@@ -13,6 +13,11 @@ function App() {
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [displayedCode, setDisplayedCode] = useState('');
 
   // Navigation
   const [activePage, setActivePage] = useState('dashboard');
@@ -281,8 +286,57 @@ function App() {
         body: JSON.stringify({ name, email, password, role: selectedRole })
       });
       const data = await res.json();
-      if (data.ok) setUser(data.data.user);
-      else { setError(data.error || 'Registration failed'); if (data.details) setFieldErrors(parseFieldErrors(data.details)); }
+      if (data.ok && data.data?.needsVerification) {
+        setVerificationEmail(data.data.email);
+        if (data.data.code) setDisplayedCode(data.data.code);
+        setAuthPage('verify');
+        setError('');
+      } else if (data.ok && data.data?.user) {
+        setUser(data.data.user);
+      } else {
+        setError(data.error || 'Registration failed');
+        if (data.details) setFieldErrors(parseFieldErrors(data.details));
+      }
+    } catch { setError('Could not connect to server'); }
+  };
+
+  const handleVerify = async (e) => {
+    e.preventDefault(); setError(''); setVerifying(true);
+    try {
+      const res = await fetch('/auth/verify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ email: verificationEmail, code: verificationCode })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setUser(data.data.user);
+        setVerificationCode(''); setVerificationEmail('');
+      } else {
+        setError(data.error || 'Verification failed');
+      }
+    } catch { setError('Could not connect to server'); }
+    setVerifying(false);
+  };
+
+  const handleResendCode = async () => {
+    if (resendCooldown > 0) return;
+    setError('');
+    try {
+      const res = await fetch('/auth/resend-code', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ email: verificationEmail })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        if (data.data?.code) setDisplayedCode(data.data.code);
+        setError('');
+        setResendCooldown(30);
+        const timer = setInterval(() => {
+          setResendCooldown(prev => { if (prev <= 1) { clearInterval(timer); return 0; } return prev - 1; });
+        }, 1000);
+      } else {
+        setError(data.error || 'Failed to resend code');
+      }
     } catch { setError('Could not connect to server'); }
   };
 
@@ -547,55 +601,96 @@ function App() {
         </div>
         <div className="gp-auth-right">
           <div className="gp-auth-card">
-            <h2>{authPage === 'signin' ? 'Welcome back' : 'Create your account'}</h2>
-            <p className="gp-auth-subtitle">{authPage === 'signin' ? 'Sign in to continue' : 'Join the PhD community'}</p>
+            <h2>{authPage === 'verify' ? 'Verify your account' : authPage === 'signin' ? 'Welcome back' : 'Create your account'}</h2>
+            <p className="gp-auth-subtitle">{authPage === 'verify' ? `Enter the code below to activate your account` : authPage === 'signin' ? 'Sign in to continue' : 'Join the PhD community'}</p>
 
             {error && <div className="gp-error-banner">{error}</div>}
 
-            <form onSubmit={authPage === 'signin' ? handleSignIn : handleSignUp}>
-              {authPage === 'signup' && (
-                <>
-                  <div className="gp-form-group">
-                    <label>Full Name</label>
-                    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Your full name" className={fieldErrors.name ? 'gp-input-error' : ''} />
-                    {fieldErr(fieldErrors, 'name')}
+            {authPage === 'verify' ? (
+              <form onSubmit={handleVerify}>
+                {displayedCode && (
+                  <div style={{ background: 'linear-gradient(135deg, #1a1a2e, #16213e)', borderRadius: '12px', padding: '20px', marginBottom: '20px', textAlign: 'center', border: '1px solid rgba(230, 126, 34, 0.3)' }}>
+                    <p style={{ color: '#aaa', fontSize: '13px', margin: '0 0 8px 0' }}>Your verification code:</p>
+                    <div style={{ fontSize: '32px', fontWeight: 'bold', letterSpacing: '8px', color: '#e67e22' }}>{displayedCode}</div>
+                    <p style={{ color: '#666', fontSize: '11px', margin: '8px 0 0 0' }}>In production, this would be sent to {verificationEmail}</p>
                   </div>
-                  <div className="gp-form-group">
-                    <label>I am a...</label>
-                    <div className="gp-role-selector">
-                      <button type="button" className={`gp-role-btn ${selectedRole === 'student' ? 'active' : ''}`} onClick={() => setSelectedRole('student')}>
-                        <span className="gp-role-icon">&#x1F393;</span> Student
-                      </button>
-                      <button type="button" className={`gp-role-btn ${selectedRole === 'advisor' ? 'active' : ''}`} onClick={() => setSelectedRole('advisor')}>
-                        <span className="gp-role-icon">&#x1F4DA;</span> Advisor
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-              <div className="gp-form-group">
-                <label>Email</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className={fieldErrors.email ? 'gp-input-error' : ''} />
-                {fieldErr(fieldErrors, 'email')}
-              </div>
-              <div className="gp-form-group">
-                <label>Password</label>
-                <div className="gp-password-wrap">
-                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" className={fieldErrors.password ? 'gp-input-error' : ''} />
-                  <button type="button" className="gp-password-toggle" onClick={() => setShowPassword(!showPassword)}>{showPassword ? 'Hide' : 'Show'}</button>
+                )}
+                <div className="gp-form-group">
+                  <label>Verification Code</label>
+                  <input
+                    type="text"
+                    value={verificationCode}
+                    onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setVerificationCode(v); }}
+                    placeholder="Enter 6-digit code"
+                    className="gp-verify-input"
+                    maxLength={6}
+                    autoFocus
+                    style={{ textAlign: 'center', fontSize: '24px', letterSpacing: '8px', fontWeight: 'bold' }}
+                  />
                 </div>
-                {fieldErr(fieldErrors, 'password')}
-              </div>
-              <button type="submit" className="gp-btn-primary gp-btn-full">{authPage === 'signin' ? 'Sign In' : 'Create Account'}</button>
-            </form>
+                <button type="submit" className="gp-btn-primary gp-btn-full" disabled={verificationCode.length !== 6 || verifying}>
+                  {verifying ? 'Verifying...' : 'Verify & Create Account'}
+                </button>
+                <div className="gp-auth-switch" style={{ marginTop: '16px', textAlign: 'center' }}>
+                  <p>
+                    Didn't receive the code?{' '}
+                    <button onClick={handleResendCode} disabled={resendCooldown > 0} style={{ opacity: resendCooldown > 0 ? 0.5 : 1 }}>
+                      {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code'}
+                    </button>
+                  </p>
+                  <p style={{ marginTop: '8px' }}>
+                    <button onClick={() => { setAuthPage('signup'); setError(''); setVerificationCode(''); }}>Back to Sign Up</button>
+                  </p>
+                </div>
+              </form>
+            ) : (
+              <>
+                <form onSubmit={authPage === 'signin' ? handleSignIn : handleSignUp}>
+                  {authPage === 'signup' && (
+                    <>
+                      <div className="gp-form-group">
+                        <label>Full Name</label>
+                        <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Your full name" className={fieldErrors.name ? 'gp-input-error' : ''} />
+                        {fieldErr(fieldErrors, 'name')}
+                      </div>
+                      <div className="gp-form-group">
+                        <label>I am a...</label>
+                        <div className="gp-role-selector">
+                          <button type="button" className={`gp-role-btn ${selectedRole === 'student' ? 'active' : ''}`} onClick={() => setSelectedRole('student')}>
+                            <span className="gp-role-icon">&#x1F393;</span> Student
+                          </button>
+                          <button type="button" className={`gp-role-btn ${selectedRole === 'advisor' ? 'active' : ''}`} onClick={() => setSelectedRole('advisor')}>
+                            <span className="gp-role-icon">&#x1F4DA;</span> Advisor
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  <div className="gp-form-group">
+                    <label>Email</label>
+                    <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className={fieldErrors.email ? 'gp-input-error' : ''} />
+                    {fieldErr(fieldErrors, 'email')}
+                  </div>
+                  <div className="gp-form-group">
+                    <label>Password</label>
+                    <div className="gp-password-wrap">
+                      <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" className={fieldErrors.password ? 'gp-input-error' : ''} />
+                      <button type="button" className="gp-password-toggle" onClick={() => setShowPassword(!showPassword)}>{showPassword ? 'Hide' : 'Show'}</button>
+                    </div>
+                    {fieldErr(fieldErrors, 'password')}
+                  </div>
+                  <button type="submit" className="gp-btn-primary gp-btn-full">{authPage === 'signin' ? 'Sign In' : 'Create Account'}</button>
+                </form>
 
-            <div className="gp-auth-switch">
-              {authPage === 'signin' ? (
-                <p>Don't have an account? <button onClick={() => { setAuthPage('signup'); setError(''); setFieldErrors({}); }}>Sign Up</button></p>
-              ) : (
-                <p>Already have an account? <button onClick={() => { setAuthPage('signin'); setError(''); setFieldErrors({}); }}>Sign In</button></p>
-              )}
-            </div>
+                <div className="gp-auth-switch">
+                  {authPage === 'signin' ? (
+                    <p>Don't have an account? <button onClick={() => { setAuthPage('signup'); setError(''); setFieldErrors({}); }}>Sign Up</button></p>
+                  ) : (
+                    <p>Already have an account? <button onClick={() => { setAuthPage('signin'); setError(''); setFieldErrors({}); }}>Sign In</button></p>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
